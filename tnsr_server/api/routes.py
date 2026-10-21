@@ -416,6 +416,19 @@ async def get_experiment(run_id: str, ctx: ServerContext = Depends(get_ctx)) -> 
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.post("/experiments/{run_id}/stop")
+def stop_experiment(run_id: str) -> dict[str, Any]:
+    """Gracefully stop a running training process (also ones started from the CLI)."""
+    from tnsr_server.services.jobs import stop_run_process
+
+    try:
+        return {"signalled": stop_run_process(run_id)}
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @router.get("/experiments/{run_id}/export")
 async def export_experiment(
     run_id: str, format: str = "json", ctx: ServerContext = Depends(get_ctx)

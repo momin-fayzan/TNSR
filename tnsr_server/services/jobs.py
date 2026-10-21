@@ -261,6 +261,28 @@ class JobManager:
             self.procs.clear()
 
 
+def stop_run_process(run_id: str) -> bool:
+    """Send SIGINT to the training process recorded in a run's status.json.
+
+    The pid is only signalled if it is alive and is a TNSR training command, so
+    a stale status file can never cause an unrelated process to be interrupted.
+    """
+    run = read_run(resolve_run(run_id))
+    status = run.get("status") or {}
+    pid = status.get("pid")
+    if status.get("state") != "running" or not pid:
+        raise RuntimeError("Run is not running")
+    try:
+        proc = psutil.Process(int(pid))
+        cmdline = " ".join(proc.cmdline())
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        raise RuntimeError("Training process is no longer alive") from exc
+    if "tnsr" not in cmdline or "train" not in cmdline:
+        raise RuntimeError("Recorded pid does not belong to a TNSR training process")
+    proc.send_signal(signal.SIGINT)
+    return True
+
+
 def _last_error(log: str) -> str | None:
     lines = [ln.strip() for ln in log.splitlines() if ln.strip()]
     for ln in reversed(lines):

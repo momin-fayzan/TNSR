@@ -1,0 +1,25 @@
+{
+  "name": "tnsr",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TNSR monorepo scripts (Python core/server via uv, Studio UI via npm workspaces)",
+  "workspaces": [
+    "tnsr_ui"
+  ],
+  "scripts": {
+    "setup": "uv sync --extra dev && npm install",
+    "dev": "concurrently -k -n api,ui -c blue,magenta \"uv run tnsr serve --reload\" \"npm --workspace tnsr_ui run dev\"",
+    "start": "npm run build && uv run tnsr serve",
+    "build": "npm --workspace tnsr_ui run build",
+    "demo:data": "uv run tnsr data prepare --name demo",
+    "demo:train": "uv run tnsr train --config demo",
+    "test": "bash scripts/test.sh",
+    "test:py": "uv run pytest",
+    "test:ui": "npm --workspace tnsr_ui run test",
+    "test:e2e": "bash scripts/e2e.sh",
+    "lint": "uv run ruff check . && uv run ruff format --check . && uv run mypy && npm --workspace tnsr_ui run lint && npm --workspace tnsr_ui run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}
