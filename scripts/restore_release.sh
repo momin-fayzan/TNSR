@@ -4,6 +4,15 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOME_DIR="${TNSR_HOME:-$ROOT}"
+# The datasets are deterministic, so regenerating them reproduces the exact token files the
+# released runs were trained on (needed for evaluation and further training, not for chat).
+cd "$ROOT"
+[[ -f "$HOME_DIR/datasets/demo/meta.json" ]] || uv run tnsr data prepare --name demo >/dev/null
+[[ -f "$HOME_DIR/datasets/demo-char/meta.json" ]] || uv run tnsr data prepare --name demo-char --tokenizer char >/dev/null
+for name in demo demo-char; do
+  echo "dataset $name: $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['identity'])" "$HOME_DIR/datasets/$name/meta.json")"
+done
+
 for src in "$ROOT"/releases/runs/*/; do
   run="$(basename "$src")"
   dest="$HOME_DIR/experiments/$run"
