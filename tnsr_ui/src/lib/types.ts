@@ -8,6 +8,7 @@ export interface GenerationSettings {
   repetition_penalty: number;
   deterministic: boolean;
   seed: number | null;
+  ignore_eos: boolean;
 }
 
 export type Mode = "chat" | "completion";

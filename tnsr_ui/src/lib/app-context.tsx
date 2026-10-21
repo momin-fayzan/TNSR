@@ -11,6 +11,7 @@ export const DEFAULT_GENERATION: GenerationSettings = {
   repetition_penalty: 1.0,
   deterministic: false,
   seed: null,
+  ignore_eos: false,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

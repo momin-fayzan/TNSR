@@ -68,6 +68,13 @@ export function StudioPage() {
   });
   const { conversation, setConversation } = chat;
 
+  // Keep the header in sync with server-side changes (e.g. the automatic title after the first message).
+  useEffect(() => {
+    if (!conversation) return;
+    const fresh = conversations.find((c) => c.id === conversation.id);
+    if (fresh && fresh.title !== conversation.title) setConversation({ ...conversation, title: fresh.title });
+  }, [conversations, conversation, setConversation]);
+
   // -- scrolling: stick to bottom unless the user scrolled up ------------------------------------
   const scroller = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -78,7 +85,9 @@ export function StudioPage() {
   };
   const scrollToBottom = (smooth = false) => {
     const el = scroller.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    if (!el) return;
+    if (smooth && typeof el.scrollTo === "function") el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    else el.scrollTop = el.scrollHeight;
   };
   useLayoutEffect(() => {
     if (atBottom) scrollToBottom();

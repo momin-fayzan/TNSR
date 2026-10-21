@@ -48,7 +48,7 @@ explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q -m 'not slow'"
+addopts = "-m 'not slow'"
 markers = [
     "slow: longer-running training/benchmark tests (run with -m slow)",
 ]

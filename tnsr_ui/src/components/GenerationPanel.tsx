@@ -121,6 +121,15 @@ export function GenerationPanel({
           className="font-mono"
         />
       </Field>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <label htmlFor="gen-ignore-eos" className="text-xs font-medium text-muted">
+            Ignore end-of-text
+          </label>
+          <p className="text-xs text-faint">Keep generating past the model&apos;s end-of-text token.</p>
+        </div>
+        <Toggle id="gen-ignore-eos" label="Ignore end-of-text" checked={settings.ignore_eos} onChange={(v) => set("ignore_eos", v)} />
+      </div>
       <div className="flex flex-wrap gap-2 pt-1">
         <Button size="sm" variant="ghost" onClick={() => onChange(DEFAULT_GENERATION)}>
           <RotateCcw className="size-3.5" aria-hidden /> Reset

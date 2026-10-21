@@ -20,6 +20,7 @@ class GenerationSettings(BaseModel):
     repetition_penalty: float = Field(1.0, ge=1.0, le=3.0)
     deterministic: bool = False
     seed: int | None = Field(None, ge=0, lt=2**53)
+    ignore_eos: bool = False
 
     def to_config(self, stop: list[str] | None = None) -> GenerationConfig:
         return GenerationConfig(
@@ -31,6 +32,7 @@ class GenerationSettings(BaseModel):
             deterministic=self.deterministic,
             seed=self.seed,
             stop=list(stop or []),
+            stop_at_eos=not self.ignore_eos,
         )
 
 
