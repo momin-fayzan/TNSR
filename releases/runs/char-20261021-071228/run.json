@@ -1,0 +1,79 @@
+{
+  "id": "char-20261021-071228",
+  "name": "char",
+  "description": "Character-level model on the TinyTales corpus",
+  "created_at": "2026-10-21T07:12:29+0000",
+  "config": {
+    "name": "char",
+    "description": "Character-level model on the TinyTales corpus",
+    "model": {
+      "vocab_size": 73,
+      "block_size": 256,
+      "n_layer": 4,
+      "n_head": 4,
+      "n_embd": 128,
+      "dropout": 0.0,
+      "bias": false,
+      "norm": "rmsnorm",
+      "pos_encoding": "learned",
+      "mlp_ratio": 4.0,
+      "tie_embeddings": true,
+      "attn_impl": "sdpa"
+    },
+    "data": {
+      "dataset": "demo-char"
+    },
+    "train": {
+      "seed": 1337,
+      "device": "auto",
+      "precision": "auto",
+      "batch_size": 16,
+      "grad_accum_steps": 1,
+      "max_steps": 1500,
+      "learning_rate": 0.002,
+      "min_lr": 0.0002,
+      "warmup_steps": 50,
+      "lr_schedule": "cosine",
+      "weight_decay": 0.1,
+      "beta1": 0.9,
+      "beta2": 0.95,
+      "grad_clip": 1.0,
+      "eval_interval": 250,
+      "eval_iters": 20,
+      "log_interval": 25,
+      "checkpoint_interval": 0,
+      "keep_checkpoints": 3,
+      "compile": false,
+      "max_nonfinite": 3,
+      "num_threads": 0
+    }
+  },
+  "num_parameters": 829696,
+  "num_parameters_non_embedding": 787584,
+  "dataset": {
+    "name": "demo-char",
+    "identity": "demo-char-e9f31289d939",
+    "val_text_sha256": "39e63b6d84d26a0bda54400b5e75442fd1e3654fad8eebefdd2259dc88dce8ea",
+    "train_tokens": 4845167,
+    "val_tokens": 255699,
+    "val_bytes": 254670
+  },
+  "tokenizer": {
+    "kind": "char",
+    "vocab_size": 73,
+    "identity": "char-73-2a7e6f2405b39da6"
+  },
+  "environment": {
+    "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cpu",
+    "cuda_available": false,
+    "mps_available": false,
+    "cpu_threads": 4,
+    "tnsr_version": "0.1.0",
+    "git_commit": "d30bfcd",
+    "device": "cpu",
+    "device_reason": "No accelerator detected; using CPU"
+  }
+}

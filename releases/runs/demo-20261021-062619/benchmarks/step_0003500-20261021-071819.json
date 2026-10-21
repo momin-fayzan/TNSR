@@ -1,0 +1,56 @@
+{
+  "kind": "benchmark",
+  "checkpoint_id": "experiments/demo-20261021-062619/checkpoints/step_0003500",
+  "checkpoint_name": "step_0003500",
+  "step": 3500,
+  "num_parameters": 3017088,
+  "created_at": "2026-10-21T07:18:19+0000",
+  "device": "cpu",
+  "threads": 4,
+  "repeats": 5,
+  "results": [
+    {
+      "prompt_tokens": 16,
+      "new_tokens": 64,
+      "kv_cache": true,
+      "ttft_ms_median": 2.31,
+      "decode_tokens_per_sec_median": 672.6,
+      "total_ms_median": 96.2
+    },
+    {
+      "prompt_tokens": 16,
+      "new_tokens": 64,
+      "kv_cache": false,
+      "ttft_ms_median": 3.38,
+      "decode_tokens_per_sec_median": 213.4,
+      "total_ms_median": 298.5
+    },
+    {
+      "prompt_tokens": 64,
+      "new_tokens": 64,
+      "kv_cache": true,
+      "ttft_ms_median": 6.33,
+      "decode_tokens_per_sec_median": 503.3,
+      "total_ms_median": 132.8
+    },
+    {
+      "prompt_tokens": 64,
+      "new_tokens": 64,
+      "kv_cache": false,
+      "ttft_ms_median": 4.81,
+      "decode_tokens_per_sec_median": 170.0,
+      "total_ms_median": 374.5
+    }
+  ],
+  "memory": {
+    "process_peak_rss_mb": 291.3
+  },
+  "environment": {
+    "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cpu",
+    "tnsr_version": "0.1.0",
+    "git_commit": "d30bfcd"
+  }
+}

@@ -1,0 +1,27 @@
+# Manual-only by default so it never consumes Actions minutes unexpectedly.
+# To run on every push/PR, add `push:` and `pull_request:` triggers.
+name: ci
+on:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: "Also run the full-stack Playwright test"
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: uv sync --extra dev
+      - run: npm ci
+      - run: bash scripts/test.sh
+      - if: ${{ inputs.e2e }}
+        run: npx --workspace tnsr_ui playwright install --with-deps chromium && bash scripts/e2e.sh

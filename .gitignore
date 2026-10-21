@@ -34,3 +34,6 @@ exports/
 .env
 .DS_Store
 *.log
+
+# Committed release artifacts (small, inference-only checkpoints + run records)
+!releases/**/*.tar.gz

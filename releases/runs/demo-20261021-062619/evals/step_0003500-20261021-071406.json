@@ -1,0 +1,53 @@
+{
+  "kind": "evaluation",
+  "checkpoint_id": "experiments/demo-20261021-062619/checkpoints/step_0003500",
+  "checkpoint_name": "step_0003500",
+  "step": 3500,
+  "created_at": "2026-10-21T07:14:06+0000",
+  "dataset": {
+    "name": "demo",
+    "identity": "demo-b1ee33d9ce21",
+    "val_text_sha256": "39e63b6d84d26a0bda54400b5e75442fd1e3654fad8eebefdd2259dc88dce8ea",
+    "split": "val"
+  },
+  "tokenizer": {
+    "kind": "bpe",
+    "vocab_size": 1621,
+    "identity": "bpe-1621-c482b372c0994fa0"
+  },
+  "metrics": {
+    "val_loss": 0.39943,
+    "perplexity": 1.491,
+    "bits_per_byte": 0.14857,
+    "tokens_evaluated": 65536,
+    "covered_full_split": true
+  },
+  "comparability": {
+    "perplexity": "only comparable between models with the same tokenizer identity on the same dataset",
+    "bits_per_byte": "comparable across tokenizers when evaluated on the same validation text"
+  },
+  "seconds": 40.77,
+  "device": "cpu",
+  "samples": [
+    {
+      "prompt": "Once upon a time",
+      "completion": " mice live in the field or near it. A mouse has four legs. A mouse squeaks; it says squeak. A mouse likes to eat cheese.",
+      "finish_reason": "eos"
+    },
+    {
+      "prompt": "User: What is 3 plus 4?\nTNSR:",
+      "completion": " 3 plus 4 is 8.",
+      "finish_reason": "stop"
+    },
+    {
+      "prompt": "User: What sound does a cow make?\nTNSR:",
+      "completion": " A cow moos. It says moo.",
+      "finish_reason": "stop"
+    },
+    {
+      "prompt": "The capital of France is",
+      "completion": " Paris. The capital of Peru is Lima. The capital of Egypt is Cairo.",
+      "finish_reason": "eos"
+    }
+  ]
+}

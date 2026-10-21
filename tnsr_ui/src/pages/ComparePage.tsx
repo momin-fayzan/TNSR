@@ -96,6 +96,10 @@ export function ComparePage() {
                       values={data.runs.map((r) => (r.evaluation ? formatNumber(r.evaluation.bits_per_byte) : "not evaluated"))}
                     />
                     <Row
+                      label="Q&A probe accuracy"
+                      values={data.runs.map((r) => (r.probe_accuracy != null ? `${(r.probe_accuracy * 100).toFixed(1)}%` : "not evaluated"))}
+                    />
+                    <Row
                       label="decode tok/s (KV cache)"
                       flag={!data.comparable.benchmarks}
                       values={data.runs.map((r) => {

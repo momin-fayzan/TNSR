@@ -109,6 +109,17 @@ export interface EvaluationResult {
   seconds: number;
   device: string;
   samples: { prompt: string; completion: string; finish_reason: string }[];
+  probes?: ProbeResult | null;
+}
+
+export interface ProbeResult {
+  version: number;
+  decoding: string;
+  accuracy: number;
+  total: number;
+  by_category: Record<string, { correct: number; total: number; accuracy: number }>;
+  failures: { category: string; question: string; expected: string; answer: string }[];
+  seconds: number;
 }
 
 export interface BenchmarkRow {
@@ -282,6 +293,7 @@ export interface Comparison {
     status: RunStatus;
     best_val_loss: number | null;
     evaluation: EvaluationResult["metrics"] | null;
+    probe_accuracy: number | null;
     benchmark: { results: BenchmarkRow[]; memory: Record<string, number>; device: string } | null;
   }[];
   comparable: { loss_and_perplexity: boolean; bits_per_byte: boolean; benchmarks: boolean };

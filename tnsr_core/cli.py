@@ -360,17 +360,22 @@ def evaluate(
         str | None, typer.Option(help="Dataset (default: the checkpoint's own)")
     ] = None,
     max_tokens: Annotated[int, typer.Option(help="Cap on validation tokens scored")] = 200_000,
+    probes: Annotated[
+        bool, typer.Option(help="Also score question/answer probes (exact match)")
+    ] = True,
     device: Annotated[str, typer.Option()] = "auto",
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Compute validation loss, perplexity and bits-per-byte, plus sample generations."""
+    """Compute validation loss, perplexity, bits-per-byte, probe accuracy and sample generations."""
     from tnsr_core.checkpoints import CheckpointError
     from tnsr_core.data import DatasetError
     from tnsr_core.evaluation import evaluate_checkpoint
 
     path = _resolve_model(model)
     try:
-        result = evaluate_checkpoint(path, dataset=dataset, device=device, max_tokens=max_tokens)
+        result = evaluate_checkpoint(
+            path, dataset=dataset, device=device, max_tokens=max_tokens, probes=probes
+        )
     except (CheckpointError, DatasetError, ValueError) as exc:
         fail(str(exc))
         return
@@ -385,6 +390,10 @@ def evaluate(
         f"val loss {m['val_loss']:.4f} | perplexity {m['perplexity']:.3f} | bits/byte {m['bits_per_byte']:.4f} | "
         f"{m['tokens_evaluated']:,} tokens | {result['seconds']}s"
     )
+    if result.get("probes"):
+        p = result["probes"]
+        cats = ", ".join(f"{c} {v['correct']}/{v['total']}" for c, v in p["by_category"].items())
+        console.print(f"probe accuracy {p['accuracy']:.1%} ({p['total']} questions): {cats}")
     for s in result["samples"]:
         console.print(
             f"[cyan]{s['prompt']!r}[/] -> {s['completion']!r}", markup=True, highlight=False

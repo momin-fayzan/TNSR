@@ -132,6 +132,9 @@ class ExperimentService:
                     "status": d["status"],
                     "best_val_loss": d["status"].get("best_val_loss"),
                     "evaluation": latest_eval and latest_eval["metrics"],
+                    "probe_accuracy": (latest_eval.get("probes") or {}).get("accuracy")
+                    if latest_eval
+                    else None,
                     "benchmark": latest_bench
                     and {
                         "results": latest_bench["results"],

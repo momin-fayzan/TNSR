@@ -1,0 +1,186 @@
+{
+  "kind": "evaluation",
+  "checkpoint_id": "experiments/demo-20261021-062619/checkpoints/step_0003500",
+  "checkpoint_name": "step_0003500",
+  "step": 3500,
+  "created_at": "2026-10-21T07:17:44+0000",
+  "dataset": {
+    "name": "demo",
+    "identity": "demo-b1ee33d9ce21",
+    "val_text_sha256": "39e63b6d84d26a0bda54400b5e75442fd1e3654fad8eebefdd2259dc88dce8ea",
+    "split": "val"
+  },
+  "tokenizer": {
+    "kind": "bpe",
+    "vocab_size": 1621,
+    "identity": "bpe-1621-c482b372c0994fa0"
+  },
+  "metrics": {
+    "val_loss": 0.39943,
+    "perplexity": 1.491,
+    "bits_per_byte": 0.14857,
+    "tokens_evaluated": 65536,
+    "covered_full_split": true
+  },
+  "comparability": {
+    "perplexity": "only comparable between models with the same tokenizer identity on the same dataset",
+    "bits_per_byte": "comparable across tokenizers when evaluated on the same validation text"
+  },
+  "seconds": 5.46,
+  "device": "cpu",
+  "samples": [
+    {
+      "prompt": "Once upon a time",
+      "completion": " mice live in the field or near it. A mouse has four legs. A mouse squeaks; it says squeak. A mouse likes to eat cheese.",
+      "finish_reason": "eos"
+    },
+    {
+      "prompt": "User: What is 3 plus 4?\nTNSR:",
+      "completion": " 3 plus 4 is 8.",
+      "finish_reason": "stop"
+    },
+    {
+      "prompt": "User: What sound does a cow make?\nTNSR:",
+      "completion": " A cow moos. It says moo.",
+      "finish_reason": "stop"
+    },
+    {
+      "prompt": "The capital of France is",
+      "completion": " Paris. The capital of Peru is Lima. The capital of Egypt is Cairo.",
+      "finish_reason": "eos"
+    }
+  ],
+  "probes": {
+    "version": 1,
+    "decoding": "greedy, chat format, stop at newline",
+    "accuracy": 0.8514,
+    "total": 249,
+    "by_category": {
+      "addition": {
+        "correct": 28,
+        "total": 50,
+        "accuracy": 0.56
+      },
+      "subtraction": {
+        "correct": 15,
+        "total": 30,
+        "accuracy": 0.5
+      },
+      "counting": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "capitals": {
+        "correct": 30,
+        "total": 30,
+        "accuracy": 1.0
+      },
+      "animal sounds": {
+        "correct": 18,
+        "total": 18,
+        "accuracy": 1.0
+      },
+      "animal legs": {
+        "correct": 18,
+        "total": 18,
+        "accuracy": 1.0
+      },
+      "colors": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "opposites": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "calendar": {
+        "correct": 19,
+        "total": 19,
+        "accuracy": 1.0
+      },
+      "spelling": {
+        "correct": 24,
+        "total": 24,
+        "accuracy": 1.0
+      }
+    },
+    "failures": [
+      {
+        "category": "addition",
+        "question": "What is 10 plus 5?",
+        "expected": "10 plus 5 is 15.",
+        "answer": "10 plus 5 is 14."
+      },
+      {
+        "category": "addition",
+        "question": "What is 0 plus 20?",
+        "expected": "0 plus 20 is 20.",
+        "answer": "0 plus 20 is 21."
+      },
+      {
+        "category": "addition",
+        "question": "What is 6 plus 6?",
+        "expected": "6 plus 6 is 12.",
+        "answer": "6 plus 6 is 13."
+      },
+      {
+        "category": "addition",
+        "question": "What is 12 plus 9?",
+        "expected": "12 plus 9 is 21.",
+        "answer": "12 plus 9 is 20."
+      },
+      {
+        "category": "addition",
+        "question": "What is 9 plus 18?",
+        "expected": "9 plus 18 is 27.",
+        "answer": "9 plus 18 is 28."
+      },
+      {
+        "category": "addition",
+        "question": "What is 20 plus 4?",
+        "expected": "20 plus 4 is 24.",
+        "answer": "20 plus 4 is 23."
+      },
+      {
+        "category": "addition",
+        "question": "What is 14 plus 4?",
+        "expected": "14 plus 4 is 18.",
+        "answer": "14 plus 4 is 17."
+      },
+      {
+        "category": "addition",
+        "question": "What is 12 plus 6?",
+        "expected": "12 plus 6 is 18.",
+        "answer": "12 plus 6 is 17."
+      },
+      {
+        "category": "addition",
+        "question": "What is 2 plus 6?",
+        "expected": "2 plus 6 is 8.",
+        "answer": "2 plus 6 is 9."
+      },
+      {
+        "category": "addition",
+        "question": "What is 15 plus 1?",
+        "expected": "15 plus 1 is 16.",
+        "answer": "15 plus 1 is 17."
+      },
+      {
+        "category": "addition",
+        "question": "What is 6 plus 2?",
+        "expected": "6 plus 2 is 8.",
+        "answer": "6 plus 2 is 9."
+      },
+      {
+        "category": "addition",
+        "question": "What is 17 plus 4?",
+        "expected": "17 plus 4 is 21.",
+        "answer": "17 plus 4 is 22."
+      }
+    ],
+    "seconds": 3.58
+  }
+}

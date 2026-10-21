@@ -50,9 +50,14 @@ def evaluate_checkpoint(
     batch_size: int = 8,
     sample_prompts: list[str] | None = None,
     sample_tokens: int = 60,
+    probes: bool = True,
     save: bool = True,
 ) -> dict[str, Any]:
-    """Score the full (or capped) validation split with non-overlapping windows."""
+    """Score the full (or capped) validation split with non-overlapping windows.
+
+    With ``probes`` (and a tokenizer that can represent the probe text), also measure
+    exact-match accuracy on the synthetic corpus's question/answer probes.
+    """
     engine = InferenceEngine.from_checkpoint(ckpt_path, device)
     meta = read_meta(ckpt_path)
     ds_ref = dataset or (meta.get("dataset") or {}).get("name")
@@ -106,6 +111,12 @@ def evaluate_checkpoint(
             {"prompt": prompt, "completion": res.text, "finish_reason": res.stats.finish_reason}
         )
 
+    probe_result = None
+    if probes:
+        from .probes import run_probes
+
+        probe_result = run_probes(engine)
+
     result = {
         "kind": "evaluation",
         "checkpoint_id": checkpoint_id(ckpt_path),
@@ -133,6 +144,7 @@ def evaluate_checkpoint(
         "seconds": round(time.perf_counter() - t0, 2),
         "device": str(engine.device),
         "samples": samples,
+        "probes": probe_result,
     }
     if save:
         result["path"] = str(_save_result(ckpt_path, "evals", result))

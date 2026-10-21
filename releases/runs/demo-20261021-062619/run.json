@@ -1,0 +1,79 @@
+{
+  "id": "demo-20261021-062619",
+  "name": "demo",
+  "description": "3M-parameter BPE model trained on the TinyTales synthetic corpus",
+  "created_at": "2026-10-21T06:26:20+0000",
+  "config": {
+    "name": "demo",
+    "description": "3M-parameter BPE model trained on the TinyTales synthetic corpus",
+    "model": {
+      "vocab_size": 1621,
+      "block_size": 256,
+      "n_layer": 6,
+      "n_head": 6,
+      "n_embd": 192,
+      "dropout": 0.0,
+      "bias": false,
+      "norm": "rmsnorm",
+      "pos_encoding": "learned",
+      "mlp_ratio": 4.0,
+      "tie_embeddings": true,
+      "attn_impl": "sdpa"
+    },
+    "data": {
+      "dataset": "demo"
+    },
+    "train": {
+      "seed": 1337,
+      "device": "auto",
+      "precision": "auto",
+      "batch_size": 16,
+      "grad_accum_steps": 1,
+      "max_steps": 4000,
+      "learning_rate": 0.002,
+      "min_lr": 0.0002,
+      "warmup_steps": 100,
+      "lr_schedule": "cosine",
+      "weight_decay": 0.1,
+      "beta1": 0.9,
+      "beta2": 0.95,
+      "grad_clip": 1.0,
+      "eval_interval": 250,
+      "eval_iters": 20,
+      "log_interval": 25,
+      "checkpoint_interval": 0,
+      "keep_checkpoints": 3,
+      "compile": false,
+      "max_nonfinite": 3,
+      "num_threads": 0
+    }
+  },
+  "num_parameters": 3017088,
+  "num_parameters_non_embedding": 2656704,
+  "dataset": {
+    "name": "demo",
+    "identity": "demo-b1ee33d9ce21",
+    "val_text_sha256": "39e63b6d84d26a0bda54400b5e75442fd1e3654fad8eebefdd2259dc88dce8ea",
+    "train_tokens": 1235287,
+    "val_tokens": 65656,
+    "val_bytes": 254670
+  },
+  "tokenizer": {
+    "kind": "bpe",
+    "vocab_size": 1621,
+    "identity": "bpe-1621-c482b372c0994fa0"
+  },
+  "environment": {
+    "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "torch": "2.14.1+cpu",
+    "cuda_available": false,
+    "mps_available": false,
+    "cpu_threads": 4,
+    "tnsr_version": "0.1.0",
+    "git_commit": null,
+    "device": "cpu",
+    "device_reason": "No accelerator detected; using CPU"
+  }
+}
