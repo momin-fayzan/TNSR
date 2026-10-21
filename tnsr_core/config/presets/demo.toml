@@ -1,0 +1,30 @@
+# Small demonstration model sized for a laptop CPU (~3.0M parameters).
+# ~30 minutes on a 4-core x86 CPU; faster on Apple Silicon (MPS) or a GPU.
+name = "demo"
+description = "3M-parameter BPE model trained on the TinyTales synthetic corpus"
+
+[model]
+block_size = 256
+n_layer = 6
+n_head = 6
+n_embd = 192
+dropout = 0.0
+norm = "rmsnorm"
+pos_encoding = "learned"
+
+[data]
+dataset = "demo"
+
+[train]
+batch_size = 16
+max_steps = 4000
+learning_rate = 2e-3
+min_lr = 2e-4
+warmup_steps = 100
+lr_schedule = "cosine"
+weight_decay = 0.1
+grad_clip = 1.0
+eval_interval = 250
+eval_iters = 20
+log_interval = 25
+keep_checkpoints = 3

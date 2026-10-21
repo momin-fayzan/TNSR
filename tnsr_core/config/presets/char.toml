@@ -1,0 +1,23 @@
+# Character-level quick experiment (prepare with: tnsr data prepare --name demo-char --tokenizer char)
+name = "char"
+description = "Character-level model on the TinyTales corpus"
+
+[model]
+block_size = 256
+n_layer = 4
+n_head = 4
+n_embd = 128
+dropout = 0.0
+
+[data]
+dataset = "demo-char"
+
+[train]
+batch_size = 16
+max_steps = 1500
+learning_rate = 2e-3
+min_lr = 2e-4
+warmup_steps = 50
+eval_interval = 250
+eval_iters = 20
+log_interval = 25

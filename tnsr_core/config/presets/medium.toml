@@ -1,0 +1,26 @@
+# Larger configuration (~11M parameters) for Apple Silicon / CUDA machines.
+# Benefits from a larger corpus: tnsr data prepare --name corpus --source /path/to/texts --vocab-size 8192
+name = "medium"
+description = "11M-parameter model for accelerators"
+
+[model]
+block_size = 512
+n_layer = 8
+n_head = 8
+n_embd = 320
+dropout = 0.1
+pos_encoding = "rope"
+
+[data]
+dataset = "demo"
+
+[train]
+batch_size = 32
+max_steps = 10000
+learning_rate = 1e-3
+min_lr = 1e-4
+warmup_steps = 300
+eval_interval = 500
+eval_iters = 40
+log_interval = 50
+precision = "auto"

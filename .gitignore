@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# Node / UI
+node_modules/
+tnsr_ui/dist/
+tnsr_ui/coverage/
+tnsr_ui/test-results/
+tnsr_ui/playwright-report/
+*.tsbuildinfo
+
+# Generated artifacts (export with `tnsr models export` / scripts/export_artifacts.sh)
+experiments/*
+!experiments/.gitkeep
+datasets/*
+!datasets/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+var/
+exports/
+*.pt
+*.bin
+*.tar.gz
+
+# Local env / OS
+.env
+.DS_Store
+*.log
