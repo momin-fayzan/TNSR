@@ -65,3 +65,17 @@ def test_cli_errors_are_friendly(home):
     assert res.exit_code == 1 and "tnsr data prepare" in res.output
     res = runner.invoke(app, ["train", "--config", "tiny", "--set", "train.batch_size=0"])
     assert res.exit_code == 1 and "batch_size" in res.output
+
+
+def test_serve_reports_busy_port(home):
+    import socket
+
+    with socket.socket() as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen()
+        port = sock.getsockname()[1]
+        res = runner.invoke(app, ["serve", "--port", str(port)])
+    assert res.exit_code == 1
+    assert f"Port {port} on 127.0.0.1 is already in use" in res.output
+    assert "--port" in res.output

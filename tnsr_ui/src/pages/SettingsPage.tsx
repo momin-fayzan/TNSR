@@ -97,7 +97,7 @@ export function SettingsPage() {
                   onChange={(e) => setDraft({ ...draft, default_model_id: e.target.value || null })}
                   className="h-8 max-w-xs min-w-0 rounded-md border border-border bg-surface-2 px-2 text-xs focus:border-accent focus:outline-none"
                 >
-                  <option value="">Newest best checkpoint</option>
+                  <option value="">Recommended (highest Q&amp;A accuracy)</option>
                   {(models.data?.models ?? []).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.id}

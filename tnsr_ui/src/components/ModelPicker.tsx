@@ -33,7 +33,7 @@ export function ModelPicker({
         {models.map((m) => (
           <option key={m.id} value={m.id}>
             {modelLabel(m.id)} · {formatParams(m.num_parameters)}
-            {m.is_best ? " · best" : ""}
+            {m.recommended ? " · recommended" : ""}
           </option>
         ))}
       </select>

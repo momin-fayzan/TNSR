@@ -254,3 +254,27 @@ def test_export_import_roundtrip(trained, tmp_path):
     with pytest.raises(CheckpointError, match="already exists"):
         import_checkpoint(archive, "imported")
     shutil.rmtree(dest)
+
+
+def test_preferred_checkpoint_uses_probe_accuracy():
+    from tnsr_core.checkpoints import preferred_checkpoint
+
+    def ck(i, saved, acc=None, best=True):
+        ev = {"probes": {"accuracy": acc}} if acc is not None else None
+        return {"id": i, "saved_at": saved, "is_best": best, "complete": True, "evaluation": ev}
+
+    assert preferred_checkpoint([]) is None
+    # newest wins when nothing is evaluated (previous behaviour)
+    assert preferred_checkpoint([ck("a", "2026-01-01"), ck("b", "2026-02-01")])["id"] == "b"
+    # an older but better-evaluated model beats a newer weaker one
+    found = [
+        ck("demo", "2026-01-01", 0.85),
+        ck("char", "2026-02-01", 0.26),
+        ck("new", "2026-03-01"),
+    ]
+    assert preferred_checkpoint(found)["id"] == "demo"
+    # non-best checkpoints of a run are not candidates when best ones exist
+    assert (
+        preferred_checkpoint([ck("x", "2026-05-01", 0.99, best=False), ck("y", "2026-01-01")])["id"]
+        == "y"
+    )

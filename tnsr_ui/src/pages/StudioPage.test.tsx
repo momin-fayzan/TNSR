@@ -132,6 +132,25 @@ describe("Studio chat", () => {
     expect(calls.find((c) => c.method === "POST" && c.url === "/api/conversations")?.body).toMatchObject({ mode: "chat" });
   });
 
+  it("starts new conversations on the recommended model, not just the loaded one", async () => {
+    const charModel = { ...MODEL, id: "experiments/char-1/checkpoints/step_0001500", recommended: false, loaded: true };
+    const demoModel = { ...MODEL, recommended: true };
+    const { calls } = mockFetch(
+      baseRoutes({
+        "GET /api/health": () =>
+          jsonResponse({ ...HEALTH, model: { loaded: { id: charModel.id }, loading: null, error: null } }),
+        "GET /api/models": () => jsonResponse({ models: [charModel, demoModel], loaded: null, loading: null, error: null }),
+        "GET /api/conversations": () => jsonResponse({ conversations: [] }),
+        "POST /api/conversations": () => jsonResponse(conversation({ id: "new2" }), 201),
+        "GET /api/conversations/new2": () => jsonResponse(conversation({ id: "new2" })),
+      }),
+    );
+    renderAt("/");
+    await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
+    await screen.findByText("Start the conversation");
+    expect(calls.find((c) => c.method === "POST" && c.url === "/api/conversations")?.body).toMatchObject({ model_id: demoModel.id });
+  });
+
   it("explains how to get a model when none exist", async () => {
     mockFetch(baseRoutes({ "GET /api/models": () => jsonResponse({ models: [], loaded: null, loading: null, error: null }) }));
     renderAt("/");

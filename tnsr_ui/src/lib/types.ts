@@ -164,6 +164,7 @@ export interface ModelInfo {
   evaluation: EvaluationResult | null;
   benchmark: BenchmarkResult | null;
   loaded?: boolean;
+  recommended?: boolean;
 }
 
 export interface LoadedModel {

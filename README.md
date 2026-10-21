@@ -70,6 +70,22 @@ half the time, and has no knowledge beyond the corpus. Chat works because about 
 corpus is `User:`/`TNSR:` dialogue (see [ADR 0002](docs/decisions/0002-chat-on-a-base-model.md)).
 TNSR is not instruction-tuned.
 
+### On Apple Silicon
+
+Measured on the owner's Apple Silicon MacBook Air (PyTorch MPS backend):
+
+| | Apple GPU (MPS) | CPU |
+|---|---|---|
+| training throughput, demo model (4,096-token batches) | **~33–35K tok/s** | ~21–22K tok/s |
+| generation, char model, KV cache on | ~850 tok/s | **~3,000 tok/s** |
+| time to first token, char model | ~1.1 ms | **~0.5–0.7 ms** |
+
+MPS and CPU training produced identical losses (5.7358 at step 20 of the smoke run). So TNSR
+**trains on MPS and generates on the CPU** by default: with `device = "auto"`, models under
+50M parameters are served from the CPU, because per-token GPU launch overhead dominates at
+this size. Set `TNSR_DEVICE=mps` or pass `--device mps` to override. Extrapolating the smoke run's ~34K tokens/s,
+the full demo run should take roughly 8 minutes there (not yet measured end to end).
+
 ## Quickstart
 
 Requirements: Python 3.10–3.13, [uv](https://docs.astral.sh/uv/), Node.js 20+ (only to build
@@ -206,9 +222,9 @@ scripts/test.sh --slow --e2e  # also longer training tests and the full-stack br
 
 | suite | count | what it covers |
 |---|---|---|
-| pytest (default) | 123 | tokenizers, model (shapes, causal masking, SDPA vs. manual, KV cache, gradients, overfitting), data (splits, leakage), training (smoke, bit-exact resume, interrupt, NaN abort, rotation, invalid configs, device fallback), inference (sampling, EOS, stop strings, determinism, cancellation, checkpoint compatibility), CLI, API (validation, SSE, cancel, retry, persistence, jobs incl. stop/resume), real uvicorn server (streaming, client-disconnect cancellation) |
+| pytest (default) | 126 | tokenizers, model (shapes, causal masking, SDPA vs. manual, KV cache, gradients, overfitting), data (splits, leakage), training (smoke, bit-exact resume, interrupt, NaN abort, rotation, invalid configs, device fallback), inference (sampling, EOS, stop strings, determinism, cancellation, checkpoint compatibility), CLI, API (validation, SSE, cancel, retry, persistence, jobs incl. stop/resume), real uvicorn server (streaming, client-disconnect cancellation) |
 | pytest `-m slow` | 2 | a small model learns the corpus (val loss, bits/byte); KV cache is faster |
-| vitest | 31 | SSE parser, API errors, settings validation, composer, messages, generation panel, sidebar, full Studio flows against a mocked backend |
+| vitest | 32 | SSE parser, API errors, settings validation, composer, messages, generation panel, sidebar, full Studio flows against a mocked backend |
 | Playwright (`scripts/e2e.sh`) | 1 | trains a tiny model from scratch, serves it, and checks in Chromium that tokens stream in incrementally, stop works, conversations survive a reload, renames stick and the Lab shows the run |
 
 ## Documentation

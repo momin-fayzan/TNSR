@@ -320,3 +320,22 @@ def import_checkpoint(archive: Path, name: str) -> Path:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     return dest
+
+
+def preferred_checkpoint(found: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Default model choice: among each run's best checkpoint, the highest Q&A probe accuracy.
+
+    Checkpoints that were never evaluated rank after evaluated ones; ties (and the
+    no-evaluation case) fall back to the most recently saved. Probe accuracy is used because,
+    unlike loss or perplexity, it is comparable across tokenizers.
+    """
+    candidates = [c for c in found if c.get("complete", True)]
+    best = [c for c in candidates if c.get("is_best")] or candidates
+    if not best:
+        return None
+
+    def score(c: dict[str, Any]) -> tuple[float, str]:
+        probes = ((c.get("evaluation") or {}).get("probes") or {}).get("accuracy")
+        return (probes if probes is not None else -1.0, c.get("saved_at") or "")
+
+    return max(best, key=score)

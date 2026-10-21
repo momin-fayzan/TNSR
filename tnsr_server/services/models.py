@@ -12,6 +12,7 @@ from tnsr_core.checkpoints import (
     checkpoint_id,
     describe_checkpoint,
     discover_checkpoints,
+    preferred_checkpoint,
     resolve_checkpoint_id,
 )
 from tnsr_core.inference import InferenceEngine
@@ -58,8 +59,10 @@ class ModelManager:
     def list_all(self) -> list[dict[str, Any]]:
         loaded = self._engine.model_id if self._engine else None
         models = discover_checkpoints()
+        preferred = preferred_checkpoint(models)
         for m in models:
             m["loaded"] = m["id"] == loaded
+            m["recommended"] = preferred is not None and m["id"] == preferred["id"]
         return models
 
     def describe(self, model_id: str) -> dict[str, Any]:

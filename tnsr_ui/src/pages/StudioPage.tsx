@@ -103,7 +103,8 @@ export function StudioPage() {
     try {
       const c = await api.createConversation({
         mode,
-        model_id: modelStatus?.loaded?.id ?? appSettings.default_model_id ?? null,
+        // Explicit default first, then the best-evaluated model, then whatever is loaded.
+        model_id: appSettings.default_model_id ?? models.find((m) => m.recommended)?.id ?? modelStatus?.loaded?.id ?? null,
         settings: appSettings.generation,
       });
       setConversations((prev) => [c, ...prev]);

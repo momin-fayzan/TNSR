@@ -21,8 +21,11 @@ and prepared datasets. The Settings page shows the same diagnostics.
 - `NotImplementedError: ... not currently implemented for the MPS device`: run with
   `PYTORCH_ENABLE_MPS_FALLBACK=1`, or force CPU with `--device cpu` (training) /
   `TNSR_DEVICE=cpu` (server).
-- MPS throughput for very small models can be lower than CPU because of kernel launch
-  overhead; benchmark both with `tnsr benchmark --device cpu` and `--device mps`.
+- Small models generate faster on the CPU than on MPS (kernel-launch overhead), so inference
+  with `device = auto` uses the CPU for models under 50M parameters; training still uses MPS.
+  Compare on your machine with `tnsr benchmark --device cpu` and `--device mps`.
+- `address already in use` / "Port 8000 … is already in use": another server holds the port;
+  `lsof -nP -iTCP:8000 -sTCP:LISTEN` shows which, or run `tnsr serve --port 8010`.
 
 ## Training
 

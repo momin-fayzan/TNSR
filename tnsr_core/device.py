@@ -53,6 +53,33 @@ def select_device(requested: str = "auto") -> DeviceInfo:
     )
 
 
+# Below this size, single-token decoding on Apple MPS is dominated by kernel-launch overhead:
+# measured on an Apple Silicon MacBook Air, a 0.8M model decoded at ~3,000 tok/s on CPU vs
+# ~850 tok/s on MPS. Training (4K-token batches) is still faster on MPS, so this applies to
+# inference only.
+MPS_INFERENCE_MIN_PARAMS = 50_000_000
+
+
+def select_inference_device(
+    requested: str = "auto", num_parameters: int | None = None
+) -> DeviceInfo:
+    """Like :func:`select_device`, but ``auto`` keeps small models off MPS for generation."""
+    info = select_device(requested)
+    if (
+        info.requested == "auto"
+        and info.device.type == "mps"
+        and num_parameters is not None
+        and num_parameters < MPS_INFERENCE_MIN_PARAMS
+    ):
+        return DeviceInfo(
+            torch.device("cpu"),
+            requested,
+            f"CPU chosen over MPS for a small model ({num_parameters / 1e6:.1f}M parameters): "
+            "per-token GPU overhead makes MPS slower for generation at this size",
+        )
+    return info
+
+
 def autocast_dtype(device: torch.device, precision: str) -> torch.dtype | None:
     """Return the autocast dtype for ``precision`` on ``device`` (None = full fp32)."""
     precision = precision.lower()

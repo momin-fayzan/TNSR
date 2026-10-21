@@ -39,20 +39,25 @@ def emit_json(data: Any) -> None:
 
 
 def _resolve_model(ref: str | None) -> Path:
-    from tnsr_core.checkpoints import CheckpointError, discover_checkpoints, resolve_checkpoint
+    from tnsr_core.checkpoints import (
+        CheckpointError,
+        discover_checkpoints,
+        preferred_checkpoint,
+        resolve_checkpoint,
+    )
 
     if ref:
         try:
             return resolve_checkpoint(ref)
         except (CheckpointError, ValueError) as exc:
             fail(str(exc))
-    found = discover_checkpoints()
-    if not found:
+    choice = preferred_checkpoint(discover_checkpoints())
+    if choice is None:
         fail("No checkpoints found. Train one first: tnsr train --config demo")
-    best = [c for c in found if c["is_best"]] or found
+        raise AssertionError  # unreachable; fail() exits
     from tnsr_core.paths import tnsr_home
 
-    return tnsr_home() / best[0]["id"]
+    return tnsr_home() / choice["id"]
 
 
 # -- doctor --------------------------------------------------------------------------------
@@ -569,7 +574,28 @@ def serve(
         err.print(
             f"[yellow]warning:[/] binding to {host} exposes TNSR beyond this machine; it has no authentication."
         )
+    if not _port_free(host, port):
+        alt = next((p for p in range(port + 10, port + 100, 10) if _port_free(host, p)), None)
+        hint = f" Try: tnsr serve --port {alt}" if alt else ""
+        fail(
+            f"Port {port} on {host} is already in use (another TNSR server or app may be "
+            f"running; `lsof -nP -iTCP:{port} -sTCP:LISTEN` shows which).{hint}"
+        )
     uvicorn.run("tnsr_server.app:create_app", factory=True, host=host, port=port, reload=reload)
+
+
+def _port_free(host: str, port: int) -> bool:
+    import socket
+
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
+        # Same option uvicorn uses, so a port in TIME_WAIT isn't misreported as busy.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
 
 
 @app.command()

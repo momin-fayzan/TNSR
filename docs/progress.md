@@ -53,12 +53,16 @@ All milestones (0–8) are implemented and verified in the development environme
 | decode tok/s, KV cache on/off | 673 / 213 | 1047 / 589 |
 | TTFT (16-token prompt) | 2.3 ms | 1.3 ms |
 
-## Not verified here (environment limits)
+## Verified on Apple Silicon (owner's MacBook Air)
 
-- **Apple Silicon / MPS**: no Mac was available. Device selection, the MPS fallback path and
-  the docs are written for it, but neither training nor inference has been run on MPS. To verify
-  on a Mac: `uv sync --extra dev && uv run tnsr doctor` (should report `mps`), then
-  `uv run tnsr train --config demo --smoke --device mps` and `uv run tnsr benchmark --device mps`.
+Setup from the README, `tnsr doctor` (MPS detected), the app on port 8010 with chat streaming,
+MPS and CPU smoke training (identical losses), and MPS vs CPU benchmarks. Findings and the
+resulting defaults: MPS trains ~1.6× faster than CPU, but the CPU generates ~3.5× faster for
+these small models, so inference now uses the CPU for models under 50M parameters. The app
+also now defaults to the best-evaluated model, and `tnsr serve` explains port conflicts.
+
+## Not verified (environment limits)
+
 - **CUDA**: not available here; code paths (autocast, fused AdamW, CUDA RNG state) are untested.
 - **Windows**: not tested (signal handling uses SIGINT/SIGTERM; scripts are bash).
 

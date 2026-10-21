@@ -18,7 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from tnsr_core import __version__
-from tnsr_core.checkpoints import CheckpointError
+from tnsr_core.checkpoints import CheckpointError, preferred_checkpoint
 from tnsr_core.config import PRESETS_DIR, list_presets, load_config
 from tnsr_core.data import DatasetError
 from tnsr_core.device import select_device, system_summary
@@ -156,12 +156,12 @@ async def _ensure_model(ctx: ServerContext, model_id: str | None):
         target = _settings(ctx).default_model_id
         if target is None:
             models = await run_in_threadpool(ctx.models.list_all)
-            best = [m for m in models if m["is_best"]] or models
-            if not best:
+            choice = preferred_checkpoint(models)
+            if choice is None:
                 raise HTTPException(
                     409, "No trained models found. Train one first (tnsr train --config demo)."
                 )
-            target = best[0]["id"]
+            target = choice["id"]
     try:
         return await run_in_threadpool(ctx.models.ensure_loaded, target)
     except (CheckpointError, ValueError) as exc:

@@ -168,3 +168,16 @@ def test_lr_schedule():
     assert values == sorted(values, reverse=True)
     cfg.lr_schedule = "constant"
     assert lr_at(50, cfg) == 1.0
+
+
+def test_small_models_generate_on_cpu_instead_of_mps(monkeypatch):
+    from tnsr_core import device as dev
+
+    monkeypatch.setattr(dev, "cuda_available", lambda: False)
+    monkeypatch.setattr(dev, "mps_available", lambda: True)
+    small = dev.select_inference_device("auto", 3_000_000)
+    assert small.device.type == "cpu" and "small model" in small.reason
+    assert dev.select_inference_device("auto", 200_000_000).device.type == "mps"
+    # An explicit request is always honoured; training keeps using MPS under auto.
+    assert dev.select_inference_device("mps", 3_000_000).device.type == "mps"
+    assert dev.select_device("auto").device.type == "mps"

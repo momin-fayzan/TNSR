@@ -13,7 +13,7 @@ from typing import Any
 import torch
 
 from tnsr_core.checkpoints import LoadedCheckpoint, checkpoint_id, load_checkpoint
-from tnsr_core.device import select_device
+from tnsr_core.device import select_inference_device
 
 from .sampling import GenerationConfig, select_token
 
@@ -94,12 +94,18 @@ class InferenceEngine:
         self.tokenizer = loaded.tokenizer
         self.device = device
         self.block_size = self.model.config.block_size
+        self.device_reason = ""
 
     @classmethod
     def from_checkpoint(cls, path: str | Path, device: str = "auto") -> InferenceEngine:
-        info = select_device(device)
-        loaded = load_checkpoint(Path(path), info.device)
-        return cls(loaded, info.device)
+        loaded = load_checkpoint(
+            Path(path), "cpu"
+        )  # validates the checkpoint before choosing a device
+        info = select_inference_device(device, loaded.model.num_parameters())
+        loaded.model.to(info.device)
+        engine = cls(loaded, info.device)
+        engine.device_reason = info.reason
+        return engine
 
     @property
     def model_id(self) -> str:
@@ -109,6 +115,7 @@ class InferenceEngine:
         return {
             "id": self.model_id,
             "device": str(self.device),
+            "device_reason": self.device_reason,
             "num_parameters": self.model.num_parameters(),
             "model_config": self.model.config.__dict__,
             "tokenizer": self.tokenizer.describe(),
