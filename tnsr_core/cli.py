@@ -245,6 +245,9 @@ def train(
     ] = None,
     device: Annotated[str | None, typer.Option(help="auto, cpu, cuda or mps")] = None,
     smoke: Annotated[bool, typer.Option(help="Fast smoke test: tiny step budget")] = False,
+    run_id_file: Annotated[
+        Path | None, typer.Option(hidden=True, help="Write the run id here (used by the server)")
+    ] = None,
 ) -> None:
     """Train a model from scratch, or resume an interrupted run."""
     from tnsr_core.config import ConfigError, load_config, parse_override
@@ -273,6 +276,8 @@ def train(
             cfg = load_config(config, overrides)
             trainer = Trainer.create(cfg, log=log)
             log(f"Run directory: {trainer.run_dir}")
+        if run_id_file is not None:
+            run_id_file.write_text(trainer.run_dir.name)
         trainer.install_signal_handlers()
         result = trainer.train()
     except (ConfigError, DatasetError, TrainingError, FileNotFoundError, ValueError) as exc:

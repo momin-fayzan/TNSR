@@ -53,6 +53,7 @@ markers = [
     "slow: longer-running training/benchmark tests (run with -m slow)",
 ]
 timeout = 300
+filterwarnings = ["ignore::DeprecationWarning:fastapi.testclient", "ignore:Using `httpx`:DeprecationWarning"]
 
 [tool.ruff]
 line-length = 100
@@ -69,3 +70,4 @@ ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = false
 files = ["tnsr_core", "tnsr_server"]
+plugins = ["pydantic.mypy"]
