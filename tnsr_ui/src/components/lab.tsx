@@ -66,6 +66,8 @@ function jobTitle(job: Job): string {
       return `Benchmark ${p.model_id}`;
     case "prepare":
       return `Prepare dataset ${p.name}`;
+    case "chess_prepare":
+      return `Label chess dataset ${p.name} (Lichess ${p.month})`;
   }
 }
 
@@ -134,7 +136,7 @@ export function JobRow({ job, onCancel }: { job: Job; onCancel: (id: string) => 
 }
 
 export function NewRunForm({ presets, datasets, onStarted }: { presets: Preset[]; datasets: DatasetMeta[]; onStarted: (job: Job) => void }) {
-  const [preset, setPreset] = useState(presets.find((p) => p.name === "demo")?.name ?? presets[0]?.name ?? "");
+  const [preset, setPreset] = useState(presets.find((p) => p.name === "chess-mini")?.name ?? presets[0]?.name ?? "");
   const cfg = presets.find((p) => p.name === preset)?.config;
   const [name, setName] = useState("");
   const [dataset, setDataset] = useState("");
@@ -237,18 +239,21 @@ export function NewRunForm({ presets, datasets, onStarted }: { presets: Preset[]
 }
 
 export function DatasetsPanel({ datasets, onPrepared }: { datasets: DatasetMeta[]; onPrepared: (job: Job) => void }) {
-  const [name, setName] = useState("demo-char");
-  const [tokenizer, setTokenizer] = useState<"bpe" | "char">("char");
+  const [name, setName] = useState("chess-2013-02");
+  const [month, setMonth] = useState("2013-02");
+  const [positions, setPositions] = useState("20000");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameError = name && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) ? "Letters, digits, '.', '_' or '-' only" : null;
+  const monthError = /^20\d\d-(0[1-9]|1[0-2])$/.test(month) ? null : "Format: 2013-02";
+  const posError = Number.isInteger(Number(positions)) && Number(positions) >= 100 ? null : "At least 100";
   const exists = datasets.some((d) => d.name === name);
 
   const prepare = async () => {
     setBusy(true);
     setError(null);
     try {
-      onPrepared(await api.startJob("prepare", { name, tokenizer, source: "synthetic" }));
+      onPrepared(await api.startJob("chess_prepare", { name, month, max_positions: Number(positions) }));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -258,10 +263,10 @@ export function DatasetsPanel({ datasets, onPrepared }: { datasets: DatasetMeta[
 
   return (
     <Card>
-      <CardHeader title="Datasets" subtitle="Prepared token datasets (tokenizer fitted on the training split only)" />
+      <CardHeader title="Datasets" subtitle="Positions from the Lichess open database, every legal move scored by Stockfish" />
       {datasets.length === 0 ? (
-        <EmptyState icon={<Database className="size-6" />} title="No datasets prepared">
-          Prepare the synthetic demo corpus below or run <code className="font-mono text-xs">uv run tnsr data prepare</code>.
+        <EmptyState icon={<Database className="size-6" />} title="No datasets yet">
+          Label positions below, or run <code className="font-mono text-xs">uv run tnsr chess prepare --month 2013-01 --name chess-demo</code>.
         </EmptyState>
       ) : (
         <ul className="divide-y divide-border">
@@ -269,18 +274,36 @@ export function DatasetsPanel({ datasets, onPrepared }: { datasets: DatasetMeta[
             <li key={d.name} className="px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-sm text-fg">{d.name}</span>
-                <Badge>{d.tokenizer.kind} · vocab {d.tokenizer.vocab_size}</Badge>
+                {d.kind === "chess_action_value" ? <Badge tone="violet">chess</Badge> : <Badge>{d.tokenizer.kind} · vocab {d.tokenizer.vocab_size}</Badge>}
+                {d.kind === "chess_action_value" && d.complete === false && <Badge tone="warn">labeling incomplete</Badge>}
                 <span className="text-xs text-faint">{d.identity}</span>
               </div>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted sm:grid-cols-4">
-                <span>{formatInt(d.stats.documents)} docs</span>
-                <span>{formatInt(d.stats.train_tokens)} train tok</span>
-                <span>{formatInt(d.stats.val_tokens)} val tok</span>
-                <span>{formatBytes(d.size_bytes)} on disk</span>
-              </div>
-              <p className="mt-1 text-xs text-faint">
-                {d.provenance.source} — {d.provenance.license}
-              </p>
+              {d.kind === "chess_action_value" ? (
+                <>
+                  <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted sm:grid-cols-4">
+                    <span>{formatInt(d.stats?.train_positions)} train positions</span>
+                    <span>{formatInt(d.stats?.val_positions)} val positions</span>
+                    <span>{formatInt((d.stats?.train_records ?? 0) + (d.stats?.val_records ?? 0))} scored moves</span>
+                    <span>{formatBytes(d.size_bytes)} on disk</span>
+                  </div>
+                  <p className="mt-1 text-xs text-faint">
+                    {d.source?.file} · {d.labeling?.engine}
+                    {d.labeling?.nodes_per_move ? ` at ${formatInt(d.labeling.nodes_per_move)} nodes/move` : ""} · {d.source?.license}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted sm:grid-cols-4">
+                    <span>{formatInt(d.stats?.documents)} docs</span>
+                    <span>{formatInt(d.stats?.train_tokens)} train tok</span>
+                    <span>{formatInt(d.stats?.val_tokens)} val tok</span>
+                    <span>{formatBytes(d.size_bytes)} on disk</span>
+                  </div>
+                  <p className="mt-1 text-xs text-faint">
+                    {d.provenance?.source} — {d.provenance?.license}
+                  </p>
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -288,25 +311,22 @@ export function DatasetsPanel({ datasets, onPrepared }: { datasets: DatasetMeta[
       <div className="border-t border-border p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-44">
-            <Field label="New synthetic dataset" htmlFor="ds-name" error={nameError ?? (exists ? "Already exists" : null)}>
+            <Field label="New dataset" htmlFor="ds-name" error={nameError ?? (exists ? "Already exists" : null)}>
               <TextInput id="ds-name" value={name} onChange={(e) => setName(e.target.value)} invalid={!!nameError || exists} />
             </Field>
           </div>
-          <div>
-            <Field label="Tokenizer" htmlFor="ds-tok">
-              <select
-                id="ds-tok"
-                value={tokenizer}
-                onChange={(e) => setTokenizer(e.target.value as "bpe" | "char")}
-                className="h-8 rounded-md border border-border bg-surface-2 px-2 text-sm focus:border-accent focus:outline-none"
-              >
-                <option value="bpe">BPE (vocab 2048)</option>
-                <option value="char">Character</option>
-              </select>
+          <div className="w-28">
+            <Field label="Lichess month" htmlFor="ds-month" error={monthError}>
+              <TextInput id="ds-month" value={month} onChange={(e) => setMonth(e.target.value)} invalid={!!monthError} className="font-mono" />
             </Field>
           </div>
-          <Button onClick={prepare} loading={busy} disabled={!name || !!nameError || exists}>
-            Prepare
+          <div className="w-28">
+            <Field label="Positions" htmlFor="ds-positions" error={posError}>
+              <TextInput id="ds-positions" inputMode="numeric" value={positions} onChange={(e) => setPositions(e.target.value)} invalid={!!posError} className="font-mono" />
+            </Field>
+          </div>
+          <Button onClick={prepare} loading={busy} disabled={!name || !!nameError || !!monthError || !!posError || exists}>
+            Download &amp; label
           </Button>
         </div>
         {error && (
@@ -315,7 +335,8 @@ export function DatasetsPanel({ datasets, onPrepared }: { datasets: DatasetMeta[
           </div>
         )}
         <p className="mt-2 text-xs text-faint">
-          Custom corpora: <code className="font-mono">uv run tnsr data prepare --name mydata --source path/to/texts</code>
+          Runs Stockfish on every legal move (2,000 nodes each); roughly 20–30 positions/s on 4 cores. Larger months are bigger downloads
+          (2013 months are ~20–40 MB).
         </p>
       </div>
     </Card>

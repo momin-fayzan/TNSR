@@ -5,9 +5,9 @@ import { Shell } from "./components/Shell";
 import { Spinner } from "./components/ui";
 import { AppProvider } from "./lib/app-context";
 import { NotFound } from "./pages/NotFound";
-import { StudioPage } from "./pages/StudioPage";
+import { PlayPage } from "./pages/PlayPage";
 
-// Lab pages pull in the charting library; load them on demand so the chat opens fast.
+// Lab pages pull in the charting library; load them on demand so the board opens fast.
 const LabPage = lazy(() => import("./pages/LabPage").then((m) => ({ default: m.LabPage })));
 const ExperimentPage = lazy(() => import("./pages/ExperimentPage").then((m) => ({ default: m.ExperimentPage })));
 const ComparePage = lazy(() => import("./pages/ComparePage").then((m) => ({ default: m.ComparePage })));
@@ -28,8 +28,8 @@ export function App() {
       <Shell>
         <Suspense fallback={<PageFallback />}>
           <Routes>
-            <Route path="/" element={<StudioPage />} />
-            <Route path="/c/:id" element={<StudioPage />} />
+            <Route path="/" element={<PlayPage />} />
+            <Route path="/g/:id" element={<PlayPage />} />
             <Route path="/lab" element={<LabPage />} />
             <Route path="/lab/runs/:runId" element={<ExperimentPage />} />
             <Route path="/lab/compare" element={<ComparePage />} />

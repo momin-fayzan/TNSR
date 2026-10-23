@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
 
-import { GenerationPanel } from "../components/GenerationPanel";
 import { Badge, Button, Card, CardHeader, ErrorBanner, PageHeader, Segmented, Spinner, StatusDot } from "../components/ui";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../lib/api";
 import { useApp } from "../lib/app-context";
-import { validateSettings } from "../lib/settings";
-import type { AppSettings, Mode, Theme } from "../lib/types";
+import type { AppSettings, Theme } from "../lib/types";
 
 export function SettingsPage() {
   const { settings, saveSettings, connection, health } = useApp();
@@ -15,10 +13,8 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const system = usePolling(() => api.system(), null, [connection]);
-  const models = usePolling(() => api.models(), null, [connection]);
   useEffect(() => setDraft(settings), [settings]);
 
-  const errors = validateSettings(draft.generation);
   const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
 
   const save = async (next = draft) => {
@@ -40,7 +36,7 @@ export function SettingsPage() {
       <PageHeader
         title="Settings"
         actions={
-          <Button variant="primary" onClick={() => save()} disabled={!dirty || Object.keys(errors).length > 0 || connection !== "online"} loading={saving}>
+          <Button variant="primary" onClick={() => save()} disabled={!dirty || connection !== "online"} loading={saving}>
             {saved ? "Saved" : "Save changes"}
           </Button>
         }
@@ -70,44 +66,6 @@ export function SettingsPage() {
                   { value: "system", label: "System" },
                 ]}
               />
-            </div>
-          </Card>
-          <Card>
-            <CardHeader title="New conversations" subtitle="Defaults applied when a conversation is created" />
-            <div className="space-y-4 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted">Default mode</span>
-                <Segmented<Mode>
-                  label="Default mode"
-                  value={draft.default_mode}
-                  onChange={(default_mode) => setDraft({ ...draft, default_mode })}
-                  options={[
-                    { value: "chat", label: "Chat" },
-                    { value: "completion", label: "Completion" },
-                  ]}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <label htmlFor="default-model" className="text-sm text-muted">
-                  Default model
-                </label>
-                <select
-                  id="default-model"
-                  value={draft.default_model_id ?? ""}
-                  onChange={(e) => setDraft({ ...draft, default_model_id: e.target.value || null })}
-                  className="h-8 max-w-xs min-w-0 rounded-md border border-border bg-surface-2 px-2 text-xs focus:border-accent focus:outline-none"
-                >
-                  <option value="">Recommended (highest Q&amp;A accuracy)</option>
-                  {(models.data?.models ?? []).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="border-t border-border pt-4">
-                <GenerationPanel settings={draft.generation} onChange={(generation) => setDraft({ ...draft, generation })} />
-              </div>
             </div>
           </Card>
         </div>

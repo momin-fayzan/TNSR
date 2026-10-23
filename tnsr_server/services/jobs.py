@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -26,7 +27,7 @@ from tnsr_core.paths import validate_name, var_dir
 from tnsr_core.training import read_run, resolve_run
 from tnsr_server.persistence import Database
 
-JOB_KINDS = {"train", "resume", "evaluate", "benchmark", "prepare"}
+JOB_KINDS = {"train", "resume", "evaluate", "benchmark", "prepare", "chess_prepare"}
 ACTIVE_STATES = {"pending", "running", "stopping"}
 
 
@@ -98,10 +99,35 @@ class JobManager:
                 path = resolve_checkpoint_id(model_id)
             except (CheckpointError, ValueError) as exc:
                 raise JobError(str(exc)) from exc
+            from tnsr_core.checkpoints import read_meta
+
+            if read_meta(path).get("task") == "chess":
+                if kind == "benchmark":
+                    raise JobError("Benchmarks apply to text models; evaluate chess models instead")
+                games = int(params.get("games", 10))
+                if not 0 <= games <= 200:
+                    raise JobError("games must be in [0, 200]")
+                return [*base, "chess", "evaluate", str(path), "--json", "--puzzles",
+                        str(int(params.get("puzzles", 1000))), "--games", str(games)]  # fmt: skip
             cmd = [*base, kind, str(path), "--json"]
             if kind == "evaluate" and params.get("max_tokens"):
                 cmd += _flag("max-tokens", int(params["max_tokens"]))
             return cmd
+        if kind == "chess_prepare":
+            name = params.get("name", "")
+            month = str(params.get("month", "2013-01"))
+            try:
+                validate_name(name, "dataset name")
+            except ValueError as exc:
+                raise JobError(str(exc)) from exc
+            if not re.fullmatch(r"20\d\d-(0[1-9]|1[0-2])", month):
+                raise JobError("month must look like 2013-01")
+            positions = int(params.get("max_positions", 20000))
+            nodes = int(params.get("nodes", 2000))
+            if not 100 <= positions <= 50_000_000 or not 50 <= nodes <= 1_000_000:
+                raise JobError("max_positions must be in [100, 50M] and nodes in [50, 1M]")
+            return [*base, "chess", "prepare", "--month", month, "--name", name,
+                    "--max-positions", str(positions), "--nodes", str(nodes)]  # fmt: skip
         if kind == "prepare":
             name = params.get("name", "")
             try:

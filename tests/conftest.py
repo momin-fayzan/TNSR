@@ -69,3 +69,31 @@ def trained(trained_home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("TNSR_HOME", str(trained_home))
     run = next((trained_home / "experiments").iterdir())
     return best_checkpoint_of_run(run)
+
+
+@pytest.fixture(scope="session")
+def chess_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A home with a material-labeled chess dataset and a short tiny chess run."""
+    import os
+
+    from tnsr_core.chess.data import build_dataset_from_labels
+    from tnsr_core.training import Trainer
+
+    from .test_chess import material_label, random_positions
+
+    root = tmp_path_factory.mktemp("chess")
+    old = os.environ.get("TNSR_HOME")
+    os.environ["TNSR_HOME"] = str(root)
+    try:
+        items = [
+            (b.fen(), material_label(b), "val" if i % 5 == 0 else "train")
+            for i, b in enumerate(random_positions(150))
+        ]
+        build_dataset_from_labels("chess-demo", items, source="random-games", labeling="material")
+        Trainer.create(load_config("chess-tiny"), log=lambda _m: None).train()
+    finally:
+        if old is None:
+            os.environ.pop("TNSR_HOME", None)
+        else:
+            os.environ["TNSR_HOME"] = old
+    return root

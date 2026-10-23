@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import Request
 
 from tnsr_server.persistence import Database
+from tnsr_server.services.chess import ChessService
 from tnsr_server.services.experiments import ExperimentService
 from tnsr_server.services.generation import GenerationService
 from tnsr_server.services.jobs import JobManager
@@ -23,6 +24,7 @@ class ServerContext:
     generation: GenerationService
     jobs: JobManager
     experiments: ExperimentService
+    chess: ChessService
     started_at: float = field(default_factory=time.time)
 
 

@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Boxes, FlaskConical, MessageSquare, Settings } from "lucide-react";
+import { Boxes, Crown, FlaskConical, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
@@ -8,7 +8,7 @@ import { modelLabel } from "../lib/format";
 import { StatusDot } from "./ui";
 
 const NAV = [
-  { to: "/", label: "Studio", icon: MessageSquare, match: (p: string) => p === "/" || p.startsWith("/c/") },
+  { to: "/", label: "Play", icon: Crown, match: (p: string) => p === "/" || p.startsWith("/g/") },
   { to: "/lab", label: "Lab", icon: FlaskConical },
   { to: "/models", label: "Models", icon: Boxes },
   { to: "/settings", label: "Settings", icon: Settings },

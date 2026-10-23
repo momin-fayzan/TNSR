@@ -161,7 +161,7 @@ export interface ModelInfo {
   has_train_state: boolean;
   complete: boolean;
   size_bytes: number;
-  evaluation: EvaluationResult | null;
+  evaluation: EvaluationResult | ChessEvaluation | null;
   benchmark: BenchmarkResult | null;
   loaded?: boolean;
   recommended?: boolean;
@@ -233,6 +233,7 @@ export interface RunConfig {
 
 export interface ExperimentSummary {
   id: string;
+  task?: "lm" | "chess";
   name: string;
   state: string | null;
   config: RunConfig;
@@ -260,11 +261,14 @@ export interface MetricRecord {
   train_loss?: number;
   val_loss?: number;
   val_perplexity?: number;
+  move_accuracy?: number;
+  regret?: number;
 }
 
 export interface ExperimentDetail {
   id: string;
   name: string;
+  task?: "lm" | "chess";
   description: string;
   created_at: string;
   config: RunConfig;
@@ -278,7 +282,7 @@ export interface ExperimentDetail {
   best_checkpoint: string | null;
   latest_checkpoint: string | null;
   metrics: MetricRecord[];
-  evaluations: EvaluationResult[];
+  evaluations: (EvaluationResult | ChessEvaluation)[];
   benchmarks: BenchmarkResult[];
 }
 
@@ -293,7 +297,7 @@ export interface Comparison {
     tokenizer: TokenizerInfo;
     status: RunStatus;
     best_val_loss: number | null;
-    evaluation: EvaluationResult["metrics"] | null;
+    evaluation: (Partial<EvaluationResult["metrics"]> & ChessEvaluation["metrics"]) | null;
     probe_accuracy: number | null;
     benchmark: { results: BenchmarkRow[]; memory: Record<string, number>; device: string } | null;
   }[];
@@ -301,7 +305,7 @@ export interface Comparison {
   warnings: string[];
 }
 
-export type JobKind = "train" | "resume" | "evaluate" | "benchmark" | "prepare";
+export type JobKind = "train" | "resume" | "evaluate" | "benchmark" | "prepare" | "chess_prepare";
 
 export interface Job {
   id: string;
@@ -322,19 +326,22 @@ export interface Job {
 export interface DatasetMeta {
   name: string;
   identity: string;
+  kind?: "chess_action_value";
+  complete?: boolean;
   created_at: string;
-  provenance: { source?: string; license?: string; description?: string };
-  split: { method: string; seed: number; val_fraction: number };
+  provenance?: { source?: string; license?: string; description?: string };
+  source?: { file?: string; license?: string };
+  labeling?: { engine?: string; nodes_per_move?: number };
+  split: { method: string; seed?: number; val_fraction: number };
   tokenizer: TokenizerInfo;
-  stats: {
-    documents: number;
-    train_documents: number;
-    val_documents: number;
-    train_tokens: number;
-    val_tokens: number;
-    train_bytes: number;
-    val_bytes: number;
-    bytes_per_token: number;
+  stats?: {
+    documents?: number;
+    train_tokens?: number;
+    val_tokens?: number;
+    train_positions?: number;
+    val_positions?: number;
+    train_records?: number;
+    val_records?: number;
   };
   size_bytes: number;
 }
@@ -343,4 +350,75 @@ export interface Preset {
   name: string;
   config: RunConfig;
   toml: string;
+}
+
+// -- chess ---------------------------------------------------------------------------------
+
+export interface MoveScore {
+  uci: string;
+  san: string;
+  win_prob: number; // for the side to move, after this move
+}
+
+export interface ChessState {
+  fen: string;
+  turn: "white" | "black";
+  moves: string[];
+  san: string[];
+  legal: string[];
+  check: boolean;
+  last_move: string | null;
+  outcome: { result: string; termination: string } | null;
+}
+
+export interface ChessAnalysis {
+  model_id: string;
+  moves: MoveScore[];
+  legal_count: number;
+}
+
+export interface ChessGame {
+  id: string;
+  title: string;
+  model_id: string | null;
+  human_color: "white" | "black";
+  start_fen: string;
+  moves: string[];
+  result: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ChessGameView extends ChessGame {
+  state: ChessState;
+  engine_move: (MoveScore & { alternatives: MoveScore[] }) | null;
+  analysis: ChessAnalysis | null;
+}
+
+export interface ChessEvaluation {
+  kind: "evaluation";
+  task: "chess";
+  checkpoint_id: string;
+  checkpoint_name: string;
+  step: number;
+  created_at: string;
+  device: string;
+  seconds: number;
+  metrics: { puzzle_accuracy?: number; elo_estimate?: number | null; move_accuracy?: number; regret?: number };
+  move_quality: { move_accuracy: number; regret: number; positions: number } | null;
+  puzzles: {
+    accuracy: number;
+    solved: number;
+    total: number;
+    by_rating: Record<string, { solved: number; total: number; accuracy: number }>;
+  } | null;
+  random_baseline: { games: number; wins: number; draws: number; losses: number } | null;
+  match: {
+    opponent: string;
+    movetime_seconds: number;
+    games: number;
+    levels: { stockfish_elo: number; wins: number; draws: number; losses: number; score: number }[];
+    elo_estimate: number | null;
+    elo_note: string;
+  } | null;
 }

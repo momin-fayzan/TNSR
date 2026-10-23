@@ -59,10 +59,18 @@ class ModelManager:
     def list_all(self) -> list[dict[str, Any]]:
         loaded = self._engine.model_id if self._engine else None
         models = discover_checkpoints()
-        preferred = preferred_checkpoint(models)
+        # One recommendation per model kind (text vs chess): their metrics are not comparable.
+        kinds = {(m.get("tokenizer") or {}).get("kind") for m in models}
+        preferred_ids = set()
+        for kind in kinds:
+            choice = preferred_checkpoint(
+                [m for m in models if (m.get("tokenizer") or {}).get("kind") == kind]
+            )
+            if choice is not None:
+                preferred_ids.add(choice["id"])
         for m in models:
             m["loaded"] = m["id"] == loaded
-            m["recommended"] = preferred is not None and m["id"] == preferred["id"]
+            m["recommended"] = m["id"] in preferred_ids
         return models
 
     def describe(self, model_id: str) -> dict[str, Any]:

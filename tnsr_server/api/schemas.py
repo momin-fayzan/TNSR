@@ -122,3 +122,30 @@ class CompareRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_ids: list[str] = Field(..., min_length=1, max_length=8)
+
+
+class GameCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    human_color: Literal["white", "black"] = "white"
+    model_id: str | None = Field(None, max_length=512)
+    start_fen: str | None = Field(None, max_length=100)
+
+
+class GameUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+class MoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    move: str = Field(..., pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")
+
+
+class AnalyseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fen: str = Field(..., max_length=100)
+    model_id: str | None = Field(None, max_length=512)

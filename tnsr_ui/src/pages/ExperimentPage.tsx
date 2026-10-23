@@ -65,6 +65,7 @@ export function ExperimentPage() {
   const latestBench = d.benchmarks.at(-1);
   const trainingJob = runJobs.find((j) => (j.kind === "train" || j.kind === "resume") && ["running", "pending", "stopping"].includes(j.status));
   const mc = d.config.model;
+  const isChess = d.task === "chess" || d.tokenizer.kind === "chess";
   const tc = d.config.train;
 
   return (
@@ -175,6 +176,23 @@ export function ExperimentPage() {
           <div className="p-4">{d.metrics.length ? <LossChart metrics={d.metrics} height={300} log={logScale} /> : <EmptyState title="No metrics logged yet" />}</div>
         </Card>
 
+        {isChess && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="Top move = Stockfish" subtitle="Share of held-out positions where the model's best move is Stockfish's best" />
+              <div className="p-4">
+                <SeriesChart metrics={d.metrics} field="move_accuracy" name="move accuracy" color="#38bdf8" type="eval" />
+              </div>
+            </Card>
+            <Card>
+              <CardHeader title="Regret" subtitle="Mean Stockfish win probability lost per move vs the best move (lower is better)" />
+              <div className="p-4">
+                <SeriesChart metrics={d.metrics} field="regret" name="regret" color="#f472b6" type="eval" />
+              </div>
+            </Card>
+          </div>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader title="Learning rate" />
@@ -220,9 +238,11 @@ export function ExperimentPage() {
                           <Button size="sm" onClick={() => startJob("evaluate", { model_id: c.id }, `eval-${c.name}`)} loading={busy === `eval-${c.name}`}>
                             <Target className="size-3" aria-hidden /> Evaluate
                           </Button>
-                          <Button size="sm" onClick={() => startJob("benchmark", { model_id: c.id }, `bench-${c.name}`)} loading={busy === `bench-${c.name}`}>
-                            <Gauge className="size-3" aria-hidden /> Benchmark
-                          </Button>
+                          {!isChess && (
+                            <Button size="sm" onClick={() => startJob("benchmark", { model_id: c.id }, `bench-${c.name}`)} loading={busy === `bench-${c.name}`}>
+                              <Gauge className="size-3" aria-hidden /> Benchmark
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -238,19 +258,21 @@ export function ExperimentPage() {
           )}
         </Card>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className={isChess ? "grid gap-6" : "grid gap-6 lg:grid-cols-2"}>
           <Card>
             <CardHeader title="Evaluation" subtitle={d.evaluations.length ? `${d.evaluations.length} result(s); latest shown` : undefined} />
             <div className="p-4">
               {latestEval ? <EvaluationView result={latestEval} /> : <p className="text-sm text-muted">No evaluation yet. Use “Evaluate” on a checkpoint.</p>}
             </div>
           </Card>
-          <Card>
-            <CardHeader title="Inference benchmark" subtitle={d.benchmarks.length ? `${d.benchmarks.length} result(s); latest shown` : undefined} />
-            <div className="p-4">
-              {latestBench ? <BenchmarkView result={latestBench} /> : <p className="text-sm text-muted">No benchmark yet. Use “Benchmark” on a checkpoint.</p>}
-            </div>
-          </Card>
+          {!isChess && (
+            <Card>
+              <CardHeader title="Inference benchmark" subtitle={d.benchmarks.length ? `${d.benchmarks.length} result(s); latest shown` : undefined} />
+              <div className="p-4">
+                {latestBench ? <BenchmarkView result={latestBench} /> : <p className="text-sm text-muted">No benchmark yet. Use “Benchmark” on a checkpoint.</p>}
+              </div>
+            </Card>
+          )}
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">

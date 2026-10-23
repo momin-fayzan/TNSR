@@ -20,6 +20,7 @@ export function ComparePage() {
     );
   }
   const data = cmp.data;
+  const isChess = data?.runs.some((r) => r.tokenizer.kind === "chess") ?? false;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <PageHeader
@@ -85,6 +86,31 @@ export function ComparePage() {
                       flag={!data.comparable.loss_and_perplexity}
                       values={data.runs.map((r) => formatNumber(r.best_val_loss))}
                     />
+{isChess ? (
+<>
+                    <Row
+                      label="puzzles solved"
+                      values={data.runs.map((r) => (r.evaluation?.puzzle_accuracy != null ? `${(r.evaluation.puzzle_accuracy * 100).toFixed(1)}%` : "not evaluated"))}
+                    />
+                    <Row
+                      label="Elo vs Stockfish"
+                      values={data.runs.map((r) =>
+                        r.evaluation?.elo_estimate != null ? String(Math.round(r.evaluation.elo_estimate)) : r.evaluation ? "no games / unbounded" : "not evaluated",
+                      )}
+                    />
+                    <Row
+                      label="top move = Stockfish"
+                      flag={!data.comparable.loss_and_perplexity}
+                      values={data.runs.map((r) => (r.evaluation?.move_accuracy != null ? `${(r.evaluation.move_accuracy * 100).toFixed(1)}%` : "—"))}
+                    />
+                    <Row
+                      label="regret / move"
+                      flag={!data.comparable.loss_and_perplexity}
+                      values={data.runs.map((r) => (r.evaluation?.regret != null ? r.evaluation.regret.toFixed(4) : "—"))}
+                    />
+</>
+) : (
+<>
                     <Row
                       label="eval perplexity"
                       flag={!data.comparable.loss_and_perplexity}
@@ -115,6 +141,8 @@ export function ComparePage() {
                         return row ? `${row.ttft_ms_median.toFixed(1)} ms` : "—";
                       })}
                     />
+</>
+)}
                   </tbody>
                 </table>
               </div>

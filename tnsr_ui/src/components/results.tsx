@@ -1,9 +1,92 @@
 // Evaluation and benchmark result views shared by the Lab and Models pages.
-import type { BenchmarkResult, EvaluationResult, ProbeResult } from "../lib/types";
+import type { BenchmarkResult, ChessEvaluation, EvaluationResult, ProbeResult } from "../lib/types";
 import { formatDate, formatInt, formatNumber } from "../lib/format";
 import { Badge } from "./ui";
 
-export function EvaluationView({ result }: { result: EvaluationResult }) {
+export function EvaluationView({ result }: { result: EvaluationResult | ChessEvaluation }) {
+  if ("task" in result && result.task === "chess") return <ChessEvaluationView result={result} />;
+  return <LMEvaluationView result={result as EvaluationResult} />;
+}
+
+/** One-line summary of an evaluation for collapsed views. */
+export function evaluationSummary(result: EvaluationResult | ChessEvaluation): string {
+  if ("task" in result && result.task === "chess") {
+    const m = result.metrics;
+    const parts = [];
+    if (m.puzzle_accuracy != null) parts.push(`puzzles ${pct(m.puzzle_accuracy)}`);
+    if (m.elo_estimate != null) parts.push(`Elo ~${Math.round(m.elo_estimate)}`);
+    if (m.move_accuracy != null) parts.push(`top-1 ${pct(m.move_accuracy)}`);
+    return parts.join(" · ");
+  }
+  const m = (result as EvaluationResult).metrics;
+  return `ppl ${formatNumber(m.perplexity, 3)} · ${formatNumber(m.bits_per_byte)} bits/byte`;
+}
+
+function pct(x: number | undefined | null, digits = 1) {
+  return x == null ? "—" : `${(x * 100).toFixed(digits)}%`;
+}
+
+export function ChessEvaluationView({ result }: { result: ChessEvaluation }) {
+  const { move_quality: mq, puzzles: pz, match, random_baseline: rb } = result;
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metric label="Puzzles solved" value={pz ? pct(pz.accuracy) : "—"} />
+        <Metric label="Elo (vs Stockfish)" value={match?.elo_estimate != null ? String(Math.round(match.elo_estimate)) : match ? "unbounded" : "—"} />
+        <Metric label="Top move = Stockfish" value={mq ? pct(mq.move_accuracy) : "—"} />
+        <Metric label="Regret / move" value={mq ? mq.regret.toFixed(4) : "—"} />
+      </div>
+      {pz && (
+        <div className="rounded-md border border-border bg-surface-2 p-3">
+          <div className="mb-2 text-xs font-medium text-muted">
+            Lichess puzzles by rating ({pz.solved}/{pz.total})
+          </div>
+          <div className="space-y-1">
+            {Object.entries(pz.by_rating).map(([bucket, v]) => (
+              <div key={bucket} className="flex items-center gap-2 text-xs">
+                <span className="w-20 shrink-0 font-mono text-faint">{bucket}</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
+                  <div className="h-full bg-accent" style={{ width: `${v.accuracy * 100}%` }} />
+                </div>
+                <span className="w-24 text-right font-mono text-muted">
+                  {pct(v.accuracy)} ({v.solved}/{v.total})
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {match && (
+        <div className="rounded-md border border-border bg-surface-2 p-3 text-xs">
+          <div className="mb-2 font-medium text-muted">
+            Games vs {match.opponent} (UCI_Elo-limited, {match.movetime_seconds}s/move)
+          </div>
+          <table className="w-full font-mono">
+            <tbody>
+              {match.levels.map((l) => (
+                <tr key={l.stockfish_elo}>
+                  <td className="py-0.5 text-faint">Elo {l.stockfish_elo}</td>
+                  <td className="py-0.5 text-muted">
+                    +{l.wins} ={l.draws} -{l.losses}
+                  </td>
+                  <td className="py-0.5 text-right text-fg">{pct(l.score, 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-faint">{match.elo_note}</p>
+        </div>
+      )}
+      <p className="text-xs text-faint">
+        {result.checkpoint_name} · {mq ? `${mq.positions} held-out positions · ` : ""}
+        {rb ? `vs random mover +${rb.wins} =${rb.draws} -${rb.losses} · ` : ""}
+        {result.device} · {result.seconds}s · {formatDate(result.created_at)}
+      </p>
+    </div>
+  );
+}
+
+function LMEvaluationView({ result }: { result: EvaluationResult }) {
   const m = result.metrics;
   return (
     <div className="space-y-3">

@@ -14,9 +14,11 @@ from fastapi.staticfiles import StaticFiles
 
 from tnsr_core import __version__
 from tnsr_core.paths import tnsr_home, ui_dist_dir, var_dir
+from tnsr_server.api.chess_routes import router as chess_router
 from tnsr_server.api.routes import router
 from tnsr_server.context import ServerContext
 from tnsr_server.persistence import Database
+from tnsr_server.services.chess import ChessService
 from tnsr_server.services.experiments import ExperimentService
 from tnsr_server.services.generation import GenerationService
 from tnsr_server.services.jobs import JobManager
@@ -43,6 +45,7 @@ def create_app(
         generation=GenerationService(models),
         jobs=JobManager(db, home),
         experiments=ExperimentService(db),
+        chess=ChessService(db, device or os.environ.get("TNSR_DEVICE", "auto")),
     )
 
     @asynccontextmanager
@@ -68,6 +71,7 @@ def create_app(
         )
 
     app.include_router(router)
+    app.include_router(chess_router)
 
     dist = ui_dist_dir()
     if serve_ui and (dist / "index.html").is_file():

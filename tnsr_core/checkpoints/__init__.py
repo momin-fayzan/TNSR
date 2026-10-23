@@ -323,7 +323,8 @@ def import_checkpoint(archive: Path, name: str) -> Path:
 
 
 def preferred_checkpoint(found: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Default model choice: among each run's best checkpoint, the highest Q&A probe accuracy.
+    """Default model choice: among each run's best checkpoint, the highest Q&A probe accuracy
+    (puzzle accuracy for chess models).
 
     Checkpoints that were never evaluated rank after evaluated ones; ties (and the
     no-evaluation case) fall back to the most recently saved. Probe accuracy is used because,
@@ -335,7 +336,10 @@ def preferred_checkpoint(found: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
     def score(c: dict[str, Any]) -> tuple[float, str]:
-        probes = ((c.get("evaluation") or {}).get("probes") or {}).get("accuracy")
+        evaluation = c.get("evaluation") or {}
+        probes = (evaluation.get("probes") or {}).get("accuracy")
+        if probes is None:  # chess models: puzzle accuracy plays the same role
+            probes = (evaluation.get("metrics") or {}).get("puzzle_accuracy")
         return (probes if probes is not None else -1.0, c.get("saved_at") or "")
 
     return max(best, key=score)

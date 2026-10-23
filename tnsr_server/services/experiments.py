@@ -179,6 +179,8 @@ def list_datasets() -> list[dict[str, Any]]:
             meta = json.loads(meta_path.read_text())
         except (OSError, json.JSONDecodeError):
             continue
-        size = sum(f.stat().st_size for f in meta_path.parent.iterdir() if f.is_file())
+        if "name" not in meta:  # e.g. the puzzle cache, which is not a training dataset
+            continue
+        size = sum(f.stat().st_size for f in meta_path.parent.rglob("*") if f.is_file())
         out.append({**meta, "size_bytes": size})
     return out

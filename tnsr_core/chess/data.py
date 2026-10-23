@@ -171,8 +171,19 @@ def sample_positions(
         for p in out
         if not (p.split == "val" and seen[position_key(chess.Board(p.fen))] == "train")
     ]
+    out = out[:max_positions]
+    if not any(p.split == "val" for p in out):
+        # Tiny corpora can hash every game into train: move the last game wholesale to val.
+        game_ids = list(dict.fromkeys(p.game_id for p in out))
+        if len(game_ids) < 2:
+            raise ChessDataError("Need positions from at least two games to make a train/val split")
+        moved = game_ids[-1]
+        out = [SampledPosition(p.fen, p.game_id, "val") if p.game_id == moved else p for p in out]
+        log(f"No game hashed into validation; using game {moved} as the validation split")
+    if not any(p.split == "train" for p in out):
+        raise ChessDataError("All sampled positions fell into validation; lower val_fraction")
     stats = {"games_used": games, "games_skipped": skipped, "positions": len(out)}
-    return out[:max_positions], stats
+    return out, stats
 
 
 # -- labeling ------------------------------------------------------------------------------

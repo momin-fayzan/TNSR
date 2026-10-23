@@ -44,7 +44,7 @@ def test_health_and_system(client):
     assert h["status"] == "ok" and h["model"]["loaded"] is None
     s = client.get("/api/system").json()
     assert s["device"]["selected"] == "cpu"
-    assert s["storage"]["database_schema_version"] == 1
+    assert s["storage"]["database_schema_version"] == 2
 
 
 def test_models_list_and_load(client):
@@ -300,7 +300,7 @@ def test_training_job_can_be_stopped_and_resumed(client):
 
 def test_database_migrations_and_recovery(tmp_path):
     db = Database(tmp_path / "x.db")
-    assert db.schema_version == 1
+    assert db.schema_version == 2
     conv = db.create_conversation("t", None)
     msg = db.add_message(conv["id"], "assistant", "partial", status="streaming")
     db.close()

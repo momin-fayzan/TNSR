@@ -95,6 +95,20 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_evaluations_checkpoint ON evaluations(checkpoint_id);
     """,
+    # v2: chess games played in TNSR Play
+    """
+    CREATE TABLE games (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        model_id TEXT,
+        human_color TEXT NOT NULL CHECK (human_color IN ('white', 'black')),
+        start_fen TEXT NOT NULL,
+        moves TEXT NOT NULL DEFAULT '[]',
+        result TEXT,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    );
+    """,
 ]
 
 
@@ -489,3 +503,57 @@ class Database:
             d.pop("file_path", None)
             out.append(d)
         return out
+
+    # -- chess games -------------------------------------------------------------------
+
+    @staticmethod
+    def _game(row: sqlite3.Row) -> dict[str, Any]:
+        out = dict(row)
+        out["moves"] = json.loads(row["moves"])
+        return out
+
+    def create_game(
+        self, title: str, model_id: str | None, human_color: str, start_fen: str
+    ) -> dict[str, Any]:
+        gid = new_id()
+        ts = now()
+        with self.transaction() as c:
+            c.execute(
+                "INSERT INTO games(id, title, model_id, human_color, start_fen, moves, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
+                (gid, title, model_id, human_color, start_fen, ts, ts),
+            )
+        game = self.get_game(gid)
+        assert game is not None
+        return game
+
+    def get_game(self, gid: str) -> dict[str, Any] | None:
+        rows = self.query("SELECT * FROM games WHERE id = ?", (gid,))
+        return self._game(rows[0]) if rows else None
+
+    def list_games(self) -> list[dict[str, Any]]:
+        return [self._game(r) for r in self.query("SELECT * FROM games ORDER BY updated_at DESC")]
+
+    def update_game(self, gid: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"title", "model_id", "moves", "result"}
+        sets, params = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                raise ValueError(f"Unknown game field {key}")
+            sets.append(f"{key} = ?")
+            params.append(json.dumps(value) if key == "moves" else value)
+        sets.append("updated_at = ?")
+        params.append(now())
+        with self.transaction() as c:
+            if (
+                c.execute(
+                    f"UPDATE games SET {', '.join(sets)} WHERE id = ?", (*params, gid)
+                ).rowcount
+                == 0
+            ):
+                return None
+        return self.get_game(gid)
+
+    def delete_game(self, gid: str) -> bool:
+        with self.transaction() as c:
+            return c.execute("DELETE FROM games WHERE id = ?", (gid,)).rowcount > 0

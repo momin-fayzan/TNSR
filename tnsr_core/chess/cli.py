@@ -95,8 +95,12 @@ def download(
 @chess_app.command("prepare")
 def prepare(
     pgn: Annotated[
-        Path, typer.Argument(help="PGN or .pgn.zst file (e.g. from `tnsr chess download`)")
-    ],
+        Path | None, typer.Argument(help="PGN or .pgn.zst file (or use --month)")
+    ] = None,
+    month: Annotated[
+        str | None,
+        typer.Option(help="Download (if needed) and use this Lichess month, e.g. 2013-01"),
+    ] = None,
     name: Annotated[str, typer.Option(help="Dataset name under datasets/")] = "chess-demo",
     max_positions: Annotated[int, typer.Option(help="Positions to sample and label")] = 20_000,
     per_game: Annotated[int, typer.Option(help="Positions sampled per game")] = 2,
@@ -113,6 +117,14 @@ def prepare(
     """Sample positions and label every legal move with Stockfish (resumable)."""
     from .data import ChessDataError, prepare_chess_dataset
 
+    if pgn is None:
+        if month is None:
+            _fail("Give a PGN file or --month")
+            return
+        download(month)
+        from tnsr_core.paths import datasets_dir
+
+        pgn = datasets_dir() / "raw" / LICHESS_MONTH_URL.format(month=month).rsplit("/", 1)[1]
     try:
         prepare_chess_dataset(
             name, pgn, max_positions=max_positions, per_game=per_game, nodes=nodes,

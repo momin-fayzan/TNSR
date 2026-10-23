@@ -2,7 +2,7 @@ import { Boxes, CheckCircle2, Gauge, Target } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { BenchmarkView, EvaluationView } from "../components/results";
+import { BenchmarkView, EvaluationView, evaluationSummary } from "../components/results";
 import { Badge, Button, Card, EmptyState, ErrorBanner, PageHeader, Spinner, Stat } from "../components/ui";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../lib/api";
@@ -122,6 +122,8 @@ function ModelCard({
             )}
             {m.is_best && <Badge tone="ok">best</Badge>}
             {m.is_latest && <Badge>latest</Badge>}
+            {m.tokenizer.kind === "chess" && <Badge tone="violet">chess</Badge>}
+            {m.recommended && <Badge tone="accent">recommended</Badge>}
             {!m.complete && <Badge tone="danger">incomplete</Badge>}
           </div>
           <p className="mt-1 text-xs text-faint">
@@ -140,12 +142,16 @@ function ModelCard({
           <Button size="sm" onClick={() => onJob("evaluate")} loading={busy === `evaluate-${m.id}`}>
             <Target className="size-3" aria-hidden /> Evaluate
           </Button>
-          <Button size="sm" onClick={() => onJob("benchmark")} loading={busy === `benchmark-${m.id}`}>
-            <Gauge className="size-3" aria-hidden /> Benchmark
-          </Button>
-          <Button size="sm" variant={m.loaded ? "secondary" : "primary"} onClick={onLoad} loading={loadingThis} disabled={m.loaded || !m.complete}>
-            {m.loaded ? "Loaded" : "Load"}
-          </Button>
+          {m.tokenizer.kind !== "chess" && (
+            <>
+              <Button size="sm" onClick={() => onJob("benchmark")} loading={busy === `benchmark-${m.id}`}>
+                <Gauge className="size-3" aria-hidden /> Benchmark
+              </Button>
+              <Button size="sm" variant={m.loaded ? "secondary" : "primary"} onClick={onLoad} loading={loadingThis} disabled={m.loaded || !m.complete}>
+                {m.loaded ? "Loaded" : "Load"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4 px-4 py-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -164,7 +170,7 @@ function ModelCard({
         <div className="border-t border-border">
           <button onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} className="w-full px-4 py-2 text-left text-xs font-medium text-muted hover:text-fg">
             {expanded ? "Hide" : "Show"} evaluation & benchmark results
-            {m.evaluation && ` · ppl ${formatNumber(m.evaluation.metrics.perplexity, 3)} · ${formatNumber(m.evaluation.metrics.bits_per_byte)} bits/byte`}
+            {m.evaluation && ` · ${evaluationSummary(m.evaluation)}`}
           </button>
           {expanded && (
             <div className="grid gap-6 px-4 pb-4 lg:grid-cols-2">

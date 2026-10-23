@@ -74,14 +74,16 @@ export function SeriesChart({
   name,
   color = SERIES[3],
   height = 180,
+  type = "train",
 }: {
   metrics: MetricRecord[];
   field: keyof MetricRecord;
   name: string;
   color?: string;
   height?: number;
+  type?: MetricRecord["type"];
 }) {
-  const data = metrics.filter((m) => m.type === "train" && m[field] != null).map((m) => ({ step: m.step, v: m[field] as number }));
+  const data = metrics.filter((m) => m.type === type && m[field] != null).map((m) => ({ step: m.step, v: m[field] as number }));
   return (
     <ChartFrame height={height}>
       <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
