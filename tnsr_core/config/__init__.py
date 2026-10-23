@@ -72,6 +72,9 @@ class ModelConfig:
 @dataclass
 class DataConfig:
     dataset: str = "demo"  # name of a prepared dataset under datasets/
+    move_marks: bool = True  # chess: write the candidate move onto the board tokens
+    value_bins: int = 128  # chess: win-probability bins
+    mate_classes: int = 0  # chess: extra classes for "mate in n" / "mated in n" (n <= this)
 
     def validate(self) -> DataConfig:
         _check(bool(self.dataset), "data.dataset must be set")
@@ -102,6 +105,7 @@ class TrainConfig:
     compile: bool = False
     max_nonfinite: int = 3  # consecutive non-finite losses before aborting
     num_threads: int = 0  # 0 = PyTorch default
+    value_loss: str = "ce"  # chess: "ce" (one-hot bin) | "hl_gauss" (Gaussian-smoothed bins)
 
     def validate(self) -> TrainConfig:
         _check(self.batch_size >= 1, "train.batch_size must be >= 1")
@@ -132,6 +136,7 @@ class TrainConfig:
         )
         _check(self.max_nonfinite >= 1, "train.max_nonfinite must be >= 1")
         _check(self.num_threads >= 0, "train.num_threads must be >= 0")
+        _check(self.value_loss in {"ce", "hl_gauss"}, "train.value_loss must be 'ce' or 'hl_gauss'")
         return self
 
 

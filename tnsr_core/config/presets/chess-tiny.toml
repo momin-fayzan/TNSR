@@ -8,10 +8,11 @@ n_layer = 2
 n_head = 2
 n_embd = 32
 dropout = 0.0
-num_classes = 32
 
 [data]
 dataset = "chess-demo"
+value_bins = 32
+mate_classes = 4
 
 [train]
 device = "cpu"

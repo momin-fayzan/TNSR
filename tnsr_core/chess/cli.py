@@ -112,6 +112,10 @@ def prepare(
     min_elo: Annotated[
         int, typer.Option(help="Skip games where either player is below this rating")
     ] = 0,
+    endgames: Annotated[
+        int,
+        typer.Option(help="Add this many generated endgame positions (teaches converting wins)"),
+    ] = 0,
     seed: Annotated[int, typer.Option()] = 0,
 ) -> None:
     """Sample positions and label every legal move with Stockfish (resumable)."""
@@ -129,6 +133,7 @@ def prepare(
         prepare_chess_dataset(
             name, pgn, max_positions=max_positions, per_game=per_game, nodes=nodes,
             workers=workers or None, val_fraction=val_fraction, min_elo=min_elo, seed=seed,
+            endgames=endgames,
             log=lambda m: console.print(f"[dim]{m}[/]"),
         )  # fmt: skip
     except (ChessDataError, ValueError, FileExistsError) as exc:
@@ -192,9 +197,7 @@ def evaluate(
         try:
             split = ChessSplit(resolve_chess_dataset(ds), "val", ChessTokenizer())
             positions = list(iter_positions(split))[:MOVE_EVAL_POSITIONS]
-            mq = move_quality(
-                engine.model, engine.tokenizer, positions, engine.num_bins, engine.device
-            )
+            mq = move_quality(engine.model, engine.tokenizer, positions, engine.head, engine.device)
             mq["positions"] = len(positions)
             log(
                 f"held-out move quality: top-1 agreement {mq['move_accuracy']:.1%}, regret {mq['regret']:.4f}"

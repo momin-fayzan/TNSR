@@ -39,6 +39,8 @@ class Task(Protocol):
 
     def extra_eval(self, model: torch.nn.Module, device: torch.device) -> dict[str, float]: ...
 
+    def checkpoint_meta(self) -> dict[str, Any]: ...
+
 
 class LMTask:
     kind = "lm"
@@ -87,6 +89,9 @@ class LMTask:
         return self.block_size
 
     def extra_eval(self, model: torch.nn.Module, device: torch.device) -> dict[str, float]:
+        return {}
+
+    def checkpoint_meta(self) -> dict[str, Any]:
         return {}
 
 

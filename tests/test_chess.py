@@ -300,3 +300,86 @@ def test_stockfish_labeling_pipeline(home, tmp_path):
         log=lambda _m: None,
     )
     assert again == path
+
+
+def test_hl_gauss_targets_are_centred_distributions():
+    from tnsr_core.chess.encoding import hl_gauss_targets
+
+    h = hl_gauss_targets(np.array([0.0, 0.5, 1.0, 0.3]), 128)
+    assert h.shape == (4, 128) and np.allclose(h.sum(1), 1)
+    assert h[0].argmax() == 0 and h[2].argmax() == 127 and h[3].argmax() == int(0.3 * 128)
+    assert h[1, 63] == pytest.approx(h[1, 64])  # 0.5 sits exactly on the edge between two bins
+    assert (h >= 0).all() and h[3, 38] > h[3, 30]
+
+
+def test_move_marks_write_the_move_onto_the_board():
+    from tnsr_core.chess.encoding import SQUARE_CHARS, board_position
+    from tnsr_core.tokenizer import tokenizer_from_dict
+
+    tok = ChessTokenizer()  # marks on by default
+    plain = ChessTokenizer(move_marks=False)
+    assert tok.vocab_size == plain.vocab_size + 2 * len(SQUARE_CHARS)
+    pairs = encode_pairs(tok, chess.STARTING_FEN, ["e2e4", "g1f3"])
+    e2, e4, g1, f3 = (board_position(s) for s in ("e2", "e4", "g1", "f3"))
+    assert pairs[0, e2] == tok.from_offset + SQUARE_CHARS.index("P")
+    assert pairs[0, e4] == tok.to_offset + SQUARE_CHARS.index(".")
+    assert (
+        pairs[1, g1] == tok.from_offset + SQUARE_CHARS.index("N") and pairs[1, e2] != pairs[0, e2]
+    )
+    # everything else is the plain position encoding
+    base = plain.encode_fen(chess.STARTING_FEN)
+    untouched = [i for i in range(STATE_LEN) if i not in (e2, e4)]
+    assert (pairs[0, untouched] == base[untouched]).all()
+    assert pairs[0, -1] == tok.action_id("e2e4")
+    # serialization keeps the flag; the unmarked layout keeps its v1 identity
+    assert tokenizer_from_dict(tok.to_dict()).move_marks is True
+    assert tokenizer_from_dict(plain.to_dict()).move_marks is False
+    assert plain.to_dict()["version"] == 1 and "move_marks" not in plain.to_dict()
+
+
+def test_batches_apply_marks_consistently_with_inference(chess_dataset):
+    tok = ChessTokenizer()
+    split = ChessSplit(resolve_chess_dataset("chess-demo"), "val", tok)
+    fen, moves = next(iter_positions(split))
+    x, _, _ = split.batch(torch.arange(len(moves)), 16)
+    expected = encode_pairs(tok, fen, [u for u, _ in moves])
+    assert torch.equal(x, torch.from_numpy(expected))
+
+
+def test_value_head_mate_classes_rank_faster_mates_first():
+    from tnsr_core.chess.encoding import ValueHead
+
+    head = ValueHead(value_bins=8, mate_classes=3)
+    assert head.num_classes == 14
+    cls = head.classes(np.array([0.5, 1.0, 1.0, 0.0, 0.0, 0.99]), np.array([0, 1, 99, -1, -3, 0]))
+    assert cls.tolist() == [4, 8, 10, 11, 13, 7]
+    r = head.rank_values
+    # mate in 1 > mate in 2 > mate in 3 > best ordinary bin; being mated slowly > being mated fast
+    assert r[8] > r[9] > r[10] > r[7] and r[13] > r[12] > r[11] and r[11] < r[0]
+    assert head.win_values[8] == 1.0 and head.win_values[11] == 0.0
+    soft = head.soft_targets(np.array([0.5, 1.0]), np.array([0, 2]))
+    assert np.allclose(soft.sum(1), 1) and soft[1, 9] == 1.0 and soft[0, 8:].sum() == 0
+    assert ValueHead.from_meta({}, 128).mate_classes == 0  # checkpoints from before mate classes
+    with pytest.raises(ValueError):
+        ValueHead.from_meta({"chess": {"value_bins": 128, "mate_classes": 20}}, 128)
+
+
+def test_checkpoint_records_value_head(chess_dataset):
+    cfg = load_config("chess-tiny", {"train.max_steps": 4, "train.eval_interval": 4})
+    ckpt = Trainer.create(cfg, log=lambda _m: None).train().last_checkpoint
+    meta = __import__("json").loads((ckpt / "meta.json").read_text())
+    assert meta["chess"] == {"value_bins": 32, "mate_classes": 4}
+    engine = ChessEngine.from_checkpoint(ckpt, "cpu")
+    assert engine.head.num_classes == 40
+    scores = engine.analyse(chess.Board())
+    assert all(0.0 <= s.win_prob <= 1.0 for s in scores)
+
+
+def test_endgame_generator_is_legal_and_deterministic():
+    from tnsr_core.chess.endgames import generate_endgames
+
+    a = generate_endgames(50, seed=3)
+    assert a == generate_endgames(50, seed=3) and len(a) == 50 and len(set(a)) == 50
+    for fen in a:
+        b = chess.Board(fen)
+        assert b.is_valid() and not b.is_game_over() and len(b.piece_map()) <= 7

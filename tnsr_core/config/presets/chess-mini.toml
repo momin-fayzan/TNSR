@@ -8,10 +8,11 @@ n_layer = 4
 n_head = 4
 n_embd = 128
 dropout = 0.0
-num_classes = 128
 
 [data]
-dataset = "chess-demo"
+dataset = "chess-v1"
+value_bins = 128
+mate_classes = 20
 
 [train]
 batch_size = 256

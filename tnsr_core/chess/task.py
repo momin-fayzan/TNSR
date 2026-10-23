@@ -12,9 +12,8 @@ import torch
 from tnsr_core.config import RunConfig
 
 from .data import ChessSplit, iter_positions, resolve_chess_dataset
-from .encoding import SEQ_LEN, ChessTokenizer, bin_centers
+from .encoding import SEQ_LEN, ChessTokenizer, ValueHead, encode_pairs
 
-DEFAULT_BINS = 128
 MOVE_EVAL_POSITIONS = 400
 
 
@@ -24,19 +23,20 @@ class ChessTask:
     def __init__(self, config: RunConfig, log: Callable[[str], None]):
         self.path = resolve_chess_dataset(config.data.dataset)
         self.meta = json.loads((self.path / "meta.json").read_text())
-        self.tokenizer = ChessTokenizer()
+        self.tokenizer = ChessTokenizer(move_marks=config.data.move_marks)
         mc = config.model
+        self.head = ValueHead(config.data.value_bins, config.data.mate_classes)
         fixed = {
             "vocab_size": self.tokenizer.vocab_size,
             "block_size": SEQ_LEN,
             "causal": False,
-            "num_classes": mc.num_classes or DEFAULT_BINS,
+            "num_classes": self.head.num_classes,
         }
         for key, value in fixed.items():
             if getattr(mc, key) != value:
                 log(f"chess task: setting model.{key}={value}")
                 setattr(mc, key, value)
-        self.num_bins = mc.num_classes
+        self.value_loss = config.train.value_loss
         self.train = ChessSplit(self.path, "train", self.tokenizer)
         self.val = ChessSplit(self.path, "val", self.tokenizer)
         self._eval_positions = list(iter_positions(self.val))[:MOVE_EVAL_POSITIONS]
@@ -63,7 +63,10 @@ class ChessTask:
         self, batch_size: int, rng: np.random.Generator
     ) -> tuple[torch.Tensor, torch.Tensor]:
         idx = torch.from_numpy(rng.integers(0, self.train.num_records, size=batch_size))
-        x, y, _ = self.train.batch(idx, self.num_bins)
+        x, y, _ = self.train.batch(idx, self.head)
+        if self.value_loss == "hl_gauss":
+            # Soft targets for training; evaluation keeps hard classes so losses stay comparable.
+            return x, self.train.soft_targets(idx, self.head)
         return x, y
 
     def eval_batches(
@@ -74,7 +77,7 @@ class ChessTask:
         idx = torch.from_numpy(np.linspace(0, data.num_records - 1, num=total).astype(np.int64))
         out = []
         for i in range(0, total, batch_size):
-            x, y, _ = data.batch(idx[i : i + batch_size], self.num_bins)
+            x, y, _ = data.batch(idx[i : i + batch_size], self.head)
             out.append((x, y))
         return out
 
@@ -88,7 +91,10 @@ class ChessTask:
         move_accuracy: share of positions where the model's top move is Stockfish's top move.
         regret: mean drop in Stockfish win probability between the best move and the model's.
         """
-        return move_quality(model, self.tokenizer, self._eval_positions, self.num_bins, device)
+        return move_quality(model, self.tokenizer, self._eval_positions, self.head, device)
+
+    def checkpoint_meta(self) -> dict[str, Any]:
+        return {"chess": self.head.to_dict()}
 
 
 @torch.no_grad()
@@ -96,23 +102,22 @@ def move_quality(
     model: torch.nn.Module,
     tokenizer: ChessTokenizer,
     positions: list[tuple[str, list[tuple[str, float]]]],
-    num_bins: int,
+    head: ValueHead | int,
     device: torch.device,
 ) -> dict[str, float]:
     if not positions:
         return {}
+    if isinstance(head, int):
+        head = ValueHead(head)
     was_training = model.training
     model.eval()
-    centers = torch.tensor(bin_centers(num_bins), dtype=torch.float32, device=device)
+    rank = torch.tensor(head.rank_values, dtype=torch.float32, device=device)
     hits = 0
     regrets = []
     for fen, moves in positions:
-        state = torch.from_numpy(tokenizer.encode_fen(fen))
-        x = state.unsqueeze(0).repeat(len(moves), 1)
-        acts = torch.tensor([tokenizer.action_id(u) for u, _ in moves]).unsqueeze(1)
-        logits, _ = model(torch.cat([x, acts], dim=1).to(device))
-        expected = torch.softmax(logits.float(), dim=-1) @ centers
-        choice = int(torch.argmax(expected))
+        x = torch.from_numpy(encode_pairs(tokenizer, fen, [u for u, _ in moves]))
+        logits, _ = model(x.to(device))
+        choice = int(torch.argmax(torch.softmax(logits.float(), dim=-1) @ rank))
         values = [v for _, v in moves]
         best = max(values)
         hits += int(values[choice] >= best - 1e-9)

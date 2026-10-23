@@ -91,3 +91,29 @@ def test_missing_model_is_a_clear_error(client):
         "/api/chess/games", json={"model_id": "experiments/gone/checkpoints/step_0000001"}
     )
     assert res.status_code == 409 and "Model unavailable" in res.json()["detail"]
+
+
+def test_chess_job_commands(client, chess_home):
+    from tnsr_server.services.jobs import JobError
+
+    jobs = client.app.state.ctx.jobs
+    model_id = client.get("/api/chess/models").json()["models"][0]["id"]
+    cmd = jobs.build_command("evaluate", {"model_id": model_id, "games": 4}, "j1")
+    assert (
+        cmd[3:5] == ["chess", "evaluate"]
+        and "--games" in cmd
+        and cmd[cmd.index("--games") + 1] == "4"
+    )
+    with pytest.raises(JobError, match="evaluate chess models"):
+        jobs.build_command("benchmark", {"model_id": model_id}, "j2")
+    cmd = jobs.build_command(
+        "chess_prepare", {"name": "c2", "month": "2013-02", "max_positions": 500}, "j3"
+    )
+    assert cmd[3:5] == ["chess", "prepare"] and "--month" in cmd and "2013-02" in cmd
+    for bad in (
+        {"name": "../x"},
+        {"name": "ok", "month": "13-02"},
+        {"name": "ok", "max_positions": 5},
+    ):
+        with pytest.raises(JobError):
+            jobs.build_command("chess_prepare", bad, "j4")

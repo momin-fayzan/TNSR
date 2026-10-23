@@ -21,7 +21,7 @@ import torch
 from tnsr_core.checkpoints import CheckpointError, checkpoint_id, load_checkpoint
 from tnsr_core.device import select_inference_device
 
-from .encoding import ChessTokenizer, bin_centers, encode_pairs
+from .encoding import ChessTokenizer, ValueHead, encode_pairs
 
 
 @dataclass
@@ -37,34 +37,37 @@ class ChessEngine:
         model: torch.nn.Module,
         tokenizer: ChessTokenizer,
         device: torch.device,
-        num_bins: int,
+        head: ValueHead | int,
         model_id: str = "",
     ):
         self.model = model.eval()
         self.tokenizer = tokenizer
         self.device = device
-        self.num_bins = num_bins
+        self.head = ValueHead(head) if isinstance(head, int) else head
         self.model_id = model_id
-        self._centers = torch.tensor(bin_centers(num_bins), dtype=torch.float32, device=device)
+        self._win = torch.tensor(self.head.win_values, dtype=torch.float32, device=device)
+        self._rank = torch.tensor(self.head.rank_values, dtype=torch.float32, device=device)
+
+    @property
+    def num_bins(self) -> int:
+        return self.head.value_bins
 
     @classmethod
     def from_checkpoint(cls, path: str | Path, device: str = "auto") -> ChessEngine:
         loaded = load_checkpoint(Path(path), "cpu")
         if not isinstance(loaded.tokenizer, ChessTokenizer) or loaded.meta.get("task") != "chess":
             raise CheckpointError(f"{path} is not a TNSR chess checkpoint")
+        try:
+            head = ValueHead.from_meta(loaded.meta, loaded.config.num_classes)
+        except ValueError as exc:
+            raise CheckpointError(f"{path}: {exc}") from exc
         info = select_inference_device(device, loaded.model.num_parameters())
         loaded.model.to(info.device)
-        return cls(
-            loaded.model,
-            loaded.tokenizer,
-            info.device,
-            loaded.config.num_classes,
-            checkpoint_id(Path(path)),
-        )
+        return cls(loaded.model, loaded.tokenizer, info.device, head, checkpoint_id(Path(path)))
 
     @torch.no_grad()
     def analyse(self, board: chess.Board) -> list[MoveScore]:
-        """All legal moves, best first."""
+        """All legal moves, best first (ranked by expected win probability, faster mates first)."""
         moves = list(board.legal_moves)
         if not moves:
             return []
@@ -72,10 +75,15 @@ class ChessEngine:
             encode_pairs(self.tokenizer, board.fen(), [m.uci() for m in moves])
         ).to(self.device)
         logits, _ = self.model(x)
-        expected = (torch.softmax(logits.float(), dim=-1) @ self._centers).cpu().tolist()
-        scored = [MoveScore(m.uci(), board.san(m), p) for m, p in zip(moves, expected, strict=True)]
-        scored.sort(key=lambda s: s.win_prob, reverse=True)
-        return scored
+        probs = torch.softmax(logits.float(), dim=-1)
+        win = (probs @ self._win).cpu().tolist()
+        rank = (probs @ self._rank).cpu().tolist()
+        scored = [
+            (r, MoveScore(m.uci(), board.san(m), w))
+            for m, w, r in zip(moves, win, rank, strict=True)
+        ]
+        scored.sort(key=lambda t: t[0], reverse=True)
+        return [s for _, s in scored]
 
     def best_move(self, board: chess.Board) -> chess.Move:
         scores = self.analyse(board)

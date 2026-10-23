@@ -38,7 +38,7 @@ import torch
 
 from tnsr_core.paths import datasets_dir, safe_join, validate_name
 
-from .encoding import ChessTokenizer, win_prob_to_bin
+from .encoding import ChessTokenizer, ValueHead
 
 CHESS_DATASET_FORMAT = 1
 DATASET_KIND = "chess_action_value"
@@ -199,8 +199,20 @@ def _init_worker(stockfish: str, nodes: int, hash_mb: int) -> None:
     _NODES = nodes
 
 
-def label_position(fen: str) -> list[tuple[str, float]] | None:
-    """Win probability (for the side to move) after each legal move; None if incomplete."""
+MATE_UNKNOWN = 99  # mate whose distance was not recorded (datasets from before mate tracking)
+
+
+def score_to_mate(score: chess.engine.PovScore, turn: chess.Color) -> int:
+    """+n: the side to move mates in n (counting this move); -n: it gets mated in n; 0: no mate."""
+    mate = score.pov(turn).mate()
+    return 0 if mate is None else int(mate)
+
+
+Label = tuple[str, float, int]  # (uci, win probability for the mover, mate distance)
+
+
+def label_position(fen: str) -> list[Label] | None:
+    """Win probability and mate distance (for the side to move) after each legal move."""
     assert _ENGINE is not None, "worker not initialised"
     board = chess.Board(fen)
     legal = [m.uci() for m in board.legal_moves]
@@ -209,27 +221,34 @@ def label_position(fen: str) -> list[tuple[str, float]] | None:
     infos = _ENGINE.analyse(
         board, chess.engine.Limit(nodes=_NODES * len(legal)), multipv=len(legal)
     )
-    values: dict[str, float] = {}
+    values: dict[str, tuple[float, int]] = {}
     for info in infos:
         pv = info.get("pv")
         score = info.get("score")
         if pv and score is not None:
-            values[pv[0].uci()] = score_to_win_prob(score, board.turn)
+            values[pv[0].uci()] = (
+                score_to_win_prob(score, board.turn),
+                score_to_mate(score, board.turn),
+            )
     if set(values) != set(legal):
         return None
-    return [(u, values[u]) for u in legal]
+    return [(u, *values[u]) for u in legal]
 
 
 def _write_shard(
-    path: Path, tokenizer: ChessTokenizer, fens: list[str], labels: list[list[tuple[str, float]]]
+    path: Path, tokenizer: ChessTokenizer, fens: list[str], labels: list[list[Any]]
 ) -> int:
+    """``labels`` rows are (uci, win_prob) or (uci, win_prob, mate)."""
     states = np.stack([tokenizer.encode_fen(f) for f in fens]).astype(np.uint8)
     offsets = np.zeros(len(fens) + 1, dtype=np.int64)
     actions: list[int] = []
     probs: list[float] = []
+    mates: list[int] = []
     for i, lab in enumerate(labels):
-        actions.extend(tokenizer.action_index(u) for u, _ in lab)
-        probs.extend(p for _, p in lab)
+        for row in lab:
+            actions.append(tokenizer.action_index(row[0]))
+            probs.append(row[1])
+            mates.append(row[2] if len(row) > 2 else _infer_mate(row[1]))
         offsets[i + 1] = len(actions)
     tmp = path.with_name(path.stem + ".tmp.npz")
     np.savez_compressed(
@@ -238,10 +257,15 @@ def _write_shard(
         move_offsets=offsets,
         actions=np.asarray(actions, dtype=np.uint16),
         win_probs=np.asarray(probs, dtype=np.float32),
+        mates=np.asarray(mates, dtype=np.int16),
         fens=np.asarray(fens),
     )
     tmp.rename(path)
     return len(actions)
+
+
+def _infer_mate(win_prob: float) -> int:
+    return MATE_UNKNOWN if win_prob >= 1.0 else -MATE_UNKNOWN if win_prob <= 0.0 else 0
 
 
 def prepare_chess_dataset(
@@ -256,11 +280,16 @@ def prepare_chess_dataset(
     shard_size: int = 2000,
     seed: int = 0,
     min_elo: int = 0,
+    endgames: int = 0,
     stockfish: str | None = None,
     root: Path | None = None,
     log: Callable[[str], None] = print,
 ) -> Path:
-    """Create (or resume) a labeled dataset. Re-running with the same name resumes labeling."""
+    """Create (or resume) a labeled dataset. Re-running with the same name resumes labeling.
+
+    ``endgames`` adds that many generated endgame positions (see ``endgames.py``), split into
+    train/val by hashing the position.
+    """
     validate_name(name, "dataset name")
     out = safe_join(root or datasets_dir(), name)
     engine_path = find_stockfish(stockfish)
@@ -287,6 +316,19 @@ def prepare_chess_dataset(
         )  # fmt: skip
         if not positions:
             raise ChessDataError("No usable positions found in the PGN file")
+        if endgames:
+            from .endgames import generate_endgames
+
+            known = {position_key(chess.Board(p.fen)) for p in positions}
+            added = 0
+            for fen in generate_endgames(endgames, seed):
+                if position_key(chess.Board(fen)) in known:
+                    continue
+                split = game_split(fen, val_fraction, seed)
+                positions.append(SampledPosition(fen, "endgame", split))
+                added += 1
+            stats["endgame_positions"] = added
+            log(f"Added {added:,} generated endgame positions")
         with positions_path.open("w") as fh:
             for p in positions:
                 fh.write(json.dumps(p.__dict__) + "\n")
@@ -302,7 +344,7 @@ def prepare_chess_dataset(
             "name": name,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "source": {"file": pgn_path.name, "sha256": sha.hexdigest(), "license": LICHESS_LICENSE},
-            "sampling": {"per_game": per_game, "max_positions": max_positions, "seed": seed, "min_elo": min_elo, **stats},
+            "sampling": {"per_game": per_game, "max_positions": max_positions, "seed": seed, "min_elo": min_elo, "endgames": endgames, **stats},
             "split": {"method": "sha256(seed:game Site) per game; val positions seen in train removed", "val_fraction": val_fraction},
             "labeling": {"engine": engine_name, "nodes_per_move": nodes, "value": "win probability for side to move (Lichess cp model; mate = 1/0)"},
             "tokenizer": tokenizer.describe(),
@@ -404,7 +446,7 @@ class ChessSplit:
     """All (position, move, win probability) records of one split, held in memory."""
 
     def __init__(self, path: Path, split: str, tokenizer: ChessTokenizer):
-        states, state_idx, actions, probs, fens = [], [], [], [], []
+        states, state_idx, actions, probs, mates, fens = [], [], [], [], [], []
         base = 0
         for f in _shard_files(path, split):
             with np.load(f) as z:
@@ -415,6 +457,13 @@ class ChessSplit:
                 state_idx.append(np.repeat(np.arange(base, base + len(s)), counts))
                 actions.append(z["actions"])
                 probs.append(z["win_probs"])
+                if "mates" in z:
+                    mates.append(z["mates"].astype(np.int64))
+                else:  # shards from before mate tracking: only "mate, distance unknown"
+                    wp = z["win_probs"]
+                    mates.append(
+                        np.where(wp >= 1.0, MATE_UNKNOWN, np.where(wp <= 0.0, -MATE_UNKNOWN, 0))
+                    )
                 fens.extend(z["fens"].tolist())
                 base += len(s)
         if not states:
@@ -424,6 +473,7 @@ class ChessSplit:
         self.state_idx = torch.from_numpy(np.concatenate(state_idx).astype(np.int64))
         self.actions = torch.from_numpy(np.concatenate(actions).astype(np.int64))
         self.win_probs = torch.from_numpy(np.concatenate(probs).astype(np.float32))
+        self.mates = torch.from_numpy(np.concatenate(mates).astype(np.int64))
         self.fens = fens
 
     @property
@@ -435,15 +485,24 @@ class ChessSplit:
         return int(self.states.size(0))
 
     def batch(
-        self, idx: torch.Tensor, num_bins: int
+        self, idx: torch.Tensor, head: ValueHead | int
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Token ids (B, 78), target bins (B,), target win probabilities (B,)."""
+        """Token ids (B, 78), target classes (B,), target win probabilities (B,)."""
+        if isinstance(head, int):
+            head = ValueHead(head)
         st = self.states[self.state_idx[idx]]
+        if self.tokenizer.move_marks:
+            st = self.tokenizer.mark_moves(st, self.actions[idx])
         act = (self.actions[idx] + self.tokenizer.action_offset).unsqueeze(1)
         x = torch.cat([st, act], dim=1)
         wp = self.win_probs[idx]
-        y = torch.from_numpy(win_prob_to_bin(wp.numpy(), num_bins))
+        y = torch.from_numpy(head.classes(wp.numpy(), self.mates[idx].numpy()))
         return x, y, wp
+
+    def soft_targets(self, idx: torch.Tensor, head: ValueHead) -> torch.Tensor:
+        return torch.from_numpy(
+            head.soft_targets(self.win_probs[idx].numpy(), self.mates[idx].numpy())
+        ).float()
 
 
 def iter_positions(split: ChessSplit) -> Iterator[tuple[str, list[tuple[str, float]]]]:

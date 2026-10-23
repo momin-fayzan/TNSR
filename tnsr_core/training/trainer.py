@@ -270,6 +270,7 @@ class Trainer:
             "step": self.step,
             "tokens_seen": self.tokens_seen,
             "task": self.config.task,
+            **self.task.checkpoint_meta(),
             "dataset": self._dataset_ref(),
             "training": {
                 k: getattr(tc, k)
