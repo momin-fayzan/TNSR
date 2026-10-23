@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
-# Rebuild experiments/<run>/ from the records and best checkpoints committed under releases/runs/,
-# so Studio and Lab work without retraining. Existing run folders are never touched.
+# Rebuild experiments/<run>/ from the run records and best checkpoints committed under
+# releases/runs/, so Play and the Lab work without retraining. Existing run folders are never
+# touched. Released checkpoints are inference-only (no optimizer state).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOME_DIR="${TNSR_HOME:-$ROOT}"
-# The datasets are deterministic, so regenerating them reproduces the exact token files the
-# released runs were trained on (needed for evaluation and further training, not for chat).
 cd "$ROOT"
-[[ -f "$HOME_DIR/datasets/demo/meta.json" ]] || uv run tnsr data prepare --name demo >/dev/null
-[[ -f "$HOME_DIR/datasets/demo-char/meta.json" ]] || uv run tnsr data prepare --name demo-char --tokenizer char >/dev/null
-for name in demo demo-char; do
-  echo "dataset $name: $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['identity'])" "$HOME_DIR/datasets/$name/meta.json")"
-done
 
 for src in "$ROOT"/releases/runs/*/; do
+  [[ -f "$src/run.json" ]] || continue
   run="$(basename "$src")"
   dest="$HOME_DIR/experiments/$run"
   if [[ -e "$dest" ]]; then echo "skip $run (already exists)"; continue; fi
@@ -22,10 +17,12 @@ for src in "$ROOT"/releases/runs/*/; do
   tar -xzf "$src/best-checkpoint.tar.gz" -C "$tmp"
   mkdir -p "$dest/checkpoints"
   cp "$src"/{run.json,status.json,metrics.jsonl} "$dest/"
-  cp -r "$src/evals" "$src/benchmarks" "$dest/" 2>/dev/null || true
+  for kind in evals benchmarks; do
+    [[ -d "$src/$kind" ]] && cp -r "$src/$kind" "$dest/"
+  done
   mv "$tmp/checkpoint" "$dest/checkpoints/$best"
   rm -rf "$tmp"
-  # Only the best checkpoint is shipped (without optimizer state), so it is both best and latest.
+  # Only the best checkpoint is shipped, so it is both best and latest.
   python3 - "$src/checkpoints.json" "$dest/checkpoints.json" "$best" <<'PY'
 import json, sys
 index = json.load(open(sys.argv[1]))
@@ -36,3 +33,8 @@ json.dump(index, open(sys.argv[2], "w"), indent=2)
 PY
   echo "restored $run ($best)"
 done
+
+if [[ ! -f "$HOME_DIR/datasets/chess-puzzles/puzzles.csv" ]]; then
+  echo "To evaluate models, download puzzles once: uv run tnsr chess puzzles --count 5000"
+fi
+echo "Training data is not shipped; label your own with: uv run tnsr chess prepare --month 2013-01 --name chess-v1"
