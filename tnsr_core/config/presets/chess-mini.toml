@@ -1,0 +1,26 @@
+# ~1.1M-parameter chess action-value model; trains on a laptop CPU in well under an hour.
+name = "chess-mini"
+description = "1.1M-parameter transformer that scores chess moves (no search)"
+task = "chess"
+
+[model]
+n_layer = 4
+n_head = 4
+n_embd = 128
+dropout = 0.0
+num_classes = 128
+
+[data]
+dataset = "chess-demo"
+
+[train]
+batch_size = 256
+max_steps = 3000
+learning_rate = 1e-3
+min_lr = 1e-4
+warmup_steps = 100
+weight_decay = 0.01
+eval_interval = 250
+eval_iters = 20
+log_interval = 25
+keep_checkpoints = 3

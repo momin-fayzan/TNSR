@@ -20,7 +20,6 @@ import torch
 
 from tnsr_core.checkpoints import CheckpointError, run_checkpoint_index, save_checkpoint
 from tnsr_core.config import RunConfig
-from tnsr_core.data import TokenDataset
 from tnsr_core.device import autocast_dtype, select_device
 from tnsr_core.model import TNSRModel
 
@@ -32,6 +31,7 @@ from .runs import (
     truncate_metrics_after,
     write_json_atomic,
 )
+from .tasks import make_task
 
 
 class TrainingError(RuntimeError):
@@ -98,17 +98,9 @@ class Trainer:
         self.device = self.device_info.device
         self.amp_dtype = autocast_dtype(self.device, tc.precision)
 
-        self.dataset = TokenDataset(config.data.dataset)
-        self.tokenizer = self.dataset.tokenizer
+        self.task = make_task(config, log)
+        self.tokenizer = self.task.tokenizer
         mc = config.model
-        if mc.vocab_size != self.tokenizer.vocab_size:
-            # The tokenizer is authoritative: align the model's vocabulary to it.
-            self.log(
-                f"Setting model.vocab_size={self.tokenizer.vocab_size} to match tokenizer "
-                f"{self.tokenizer.identity}"
-            )
-            mc.vocab_size = self.tokenizer.vocab_size
-        self.dataset.check_block_size(mc.block_size)
 
         self._seed_everything(tc.seed)
         self.model = TNSRModel(mc).to(self.device)
@@ -128,16 +120,13 @@ class Trainer:
         self.tokens_seen = 0
         self.best_val_loss: float | None = None
         self.last_val: dict[str, float] = {}
+        self.last_extra: dict[str, float] = {}
         self.consecutive_nonfinite = 0
         self.nonfinite_total = 0
         self.peak_rss_mb = 0.0
         self.last_checkpoint: Path | None = None
-        self.val_batches = self.dataset.fixed_batches(
-            "val", tc.eval_iters, tc.batch_size, mc.block_size
-        )
-        self.train_eval_batches = self.dataset.fixed_batches(
-            "train", tc.eval_iters, tc.batch_size, mc.block_size
-        )
+        self.val_batches = self.task.eval_batches("val", tc.eval_iters, tc.batch_size)
+        self.train_eval_batches = self.task.eval_batches("train", tc.eval_iters, tc.batch_size)
         if resume:
             self._restore_latest()
 
@@ -165,6 +154,7 @@ class Trainer:
             {
                 "id": run_dir.name,
                 "name": config.name,
+                "task": config.task,
                 "description": config.description,
                 "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 "config": config.to_dict(),
@@ -193,10 +183,10 @@ class Trainer:
             config.train.device = device
         config.validate()
         trainer = cls(config, run_dir, resume=True, log=log)
-        if trainer.dataset.identity != run["dataset"]["identity"]:
+        if trainer.task.identity != run["dataset"]["identity"]:
             raise TrainingError(
                 f"Dataset changed since this run started ({run['dataset']['identity']} -> "
-                f"{trainer.dataset.identity}); resuming would mix data. Start a new run instead."
+                f"{trainer.task.identity}); resuming would mix data. Start a new run instead."
             )
         if max_steps is not None and max_steps != run["config"]["train"]["max_steps"]:
             run_json = {k: v for k, v in run.items() if k != "status"}
@@ -205,15 +195,7 @@ class Trainer:
         return trainer
 
     def _dataset_ref(self) -> dict[str, Any]:
-        stats = self.dataset.meta["stats"]
-        return {
-            "name": self.dataset.name,
-            "identity": self.dataset.identity,
-            "val_text_sha256": self.dataset.meta.get("val_text_sha256"),
-            "train_tokens": stats["train_tokens"],
-            "val_tokens": stats["val_tokens"],
-            "val_bytes": stats["val_bytes"],
-        }
+        return self.task.dataset_ref()
 
     def _restore_latest(self) -> None:
         index = run_checkpoint_index(self.run_dir)
@@ -287,6 +269,7 @@ class Trainer:
             "run_name": self.config.name,
             "step": self.step,
             "tokens_seen": self.tokens_seen,
+            "task": self.config.task,
             "dataset": self._dataset_ref(),
             "training": {
                 k: getattr(tc, k)
@@ -312,6 +295,7 @@ class Trainer:
                 if "val" in self.last_val
                 else None,
                 "elapsed_seconds": round(elapsed, 2),
+                **self.last_extra,
             },
         }
         train_state = {
@@ -431,9 +415,7 @@ class Trainer:
                 self.optimizer.zero_grad(set_to_none=True)
                 loss_sum = 0.0
                 for _ in range(tc.grad_accum_steps):
-                    x, y = self.dataset.random_batch(
-                        "train", tc.batch_size, mc.block_size, self.data_rng
-                    )
+                    x, y = self.task.train_batch(tc.batch_size, self.data_rng)
                     x, y = (
                         x.to(self.device, non_blocking=True),
                         y.to(self.device, non_blocking=True),
@@ -498,6 +480,8 @@ class Trainer:
                 is_eval = self.step % tc.eval_interval == 0 or self.step == tc.max_steps
                 if is_eval:
                     losses = self.estimate_loss()
+                    extra = self.task.extra_eval(self.model, self.device)
+                    self.last_extra = extra
                     self.last_val = losses
                     if self.best_val_loss is None or losses["val"] < self.best_val_loss:
                         self.best_val_loss = losses["val"]
@@ -510,11 +494,13 @@ class Trainer:
                             "val_loss": round(losses["val"], 5),
                             "val_perplexity": round(math.exp(min(losses["val"], 50)), 4),
                             "elapsed": round(elapsed(), 2),
+                            **{k: round(v, 5) for k, v in extra.items()},
                         },
                     )
                     self.log(
                         f"eval @ {self.step}: train {losses['train']:.4f} | val {losses['val']:.4f} "
                         f"(ppl {math.exp(min(losses['val'], 50)):.2f})"
+                        + "".join(f" | {k} {v:.4f}" for k, v in extra.items())
                     )
                 ckpt_due = (
                     (tc.checkpoint_interval and self.step % tc.checkpoint_interval == 0)

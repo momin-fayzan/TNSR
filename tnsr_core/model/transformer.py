@@ -73,6 +73,7 @@ class CausalSelfAttention(nn.Module):
         self.n_head = cfg.n_head
         self.head_dim = cfg.head_dim
         self.attn_impl = cfg.attn_impl
+        self.causal = cfg.causal
         self.dropout = cfg.dropout
         self.qkv = nn.Linear(cfg.n_embd, 3 * cfg.n_embd, bias=cfg.bias)
         self.proj = nn.Linear(cfg.n_embd, cfg.n_embd, bias=cfg.bias)
@@ -104,7 +105,14 @@ class CausalSelfAttention(nn.Module):
 
         S = k.size(2)  # total key length (past + current)
         dropout_p = self.dropout if self.training else 0.0
-        if self.attn_impl == "sdpa":
+        if not self.causal:
+            if self.attn_impl == "sdpa":
+                y = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+            else:
+                att = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+                att = self.attn_drop(F.softmax(att.float(), dim=-1).to(q.dtype))
+                y = att @ v
+        elif self.attn_impl == "sdpa":
             if past == 0:
                 y = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p, is_causal=True)
             elif T == 1:
@@ -170,9 +178,13 @@ class TNSRModel(nn.Module):
         self.drop = nn.Dropout(cfg.dropout)
         self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
         self.norm_f = make_norm(cfg)
-        self.lm_head = nn.Linear(cfg.n_embd, cfg.vocab_size, bias=False)
-        if cfg.tie_embeddings:
-            self.lm_head.weight = self.tok_emb.weight
+        if cfg.num_classes:
+            # Classifier head on the last position (e.g. win-probability bins for a chess move).
+            self.lm_head = nn.Linear(cfg.n_embd, cfg.num_classes, bias=True)
+        else:
+            self.lm_head = nn.Linear(cfg.n_embd, cfg.vocab_size, bias=False)
+            if cfg.tie_embeddings:
+                self.lm_head.weight = self.tok_emb.weight
         if cfg.pos_encoding == "rope":
             cos, sin = rope_tables(cfg.head_dim, cfg.block_size)
             self.register_buffer("rope_cos", cos, persistent=False)
@@ -217,6 +229,8 @@ class TNSRModel(nn.Module):
         position only (cheaper during generation).
         """
         B, T = idx.shape
+        if cache is not None and not self.config.causal:
+            raise ValueError("KV caching requires a causal model")
         start = cache[0].length if cache else 0
         if start + T > self.config.block_size:
             raise ValueError(
@@ -233,6 +247,10 @@ class TNSRModel(nn.Module):
         for i, block in enumerate(self.blocks):
             x = block(x, rope=rope, cache=cache[i] if cache else None)
         x = self.norm_f(x)
+        if self.config.num_classes:
+            logits = self.lm_head(x[:, -1, :])  # (B, num_classes)
+            loss = F.cross_entropy(logits.float(), targets) if targets is not None else None
+            return logits, loss
         if last_only and targets is None:
             x = x[:, -1:, :]
         logits = self.lm_head(x)

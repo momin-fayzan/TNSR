@@ -25,6 +25,15 @@ app.add_typer(data_app, name="data")
 app.add_typer(models_app, name="models")
 app.add_typer(runs_app, name="runs")
 
+
+def _register_chess() -> None:
+    from tnsr_core.chess.cli import chess_app
+
+    app.add_typer(chess_app, name="chess")
+
+
+_register_chess()
+
 console = Console()
 err = Console(stderr=True)
 

@@ -35,6 +35,8 @@ class ModelConfig:
     mlp_ratio: float = 4.0
     tie_embeddings: bool = True
     attn_impl: str = "sdpa"  # "sdpa" (fused PyTorch kernel) | "manual" (explicit mask)
+    causal: bool = True  # False = bidirectional attention (encoder, e.g. chess positions)
+    num_classes: int = 0  # 0 = next-token LM head; >0 = classify from the last position
 
     def validate(self) -> ModelConfig:
         _check(self.vocab_size >= 2, "model.vocab_size must be >= 2")
@@ -56,6 +58,10 @@ class ModelConfig:
             _check((self.n_embd // self.n_head) % 2 == 0, "RoPE requires an even head dimension")
         _check(self.mlp_ratio > 0, "model.mlp_ratio must be > 0")
         _check(self.attn_impl in {"sdpa", "manual"}, "model.attn_impl must be 'sdpa' or 'manual'")
+        _check(
+            self.num_classes == 0 or self.num_classes >= 2,
+            "model.num_classes must be 0 (language model) or >= 2 (classifier)",
+        )
         return self
 
     @property
@@ -133,11 +139,13 @@ class TrainConfig:
 class RunConfig:
     name: str = "run"
     description: str = ""
+    task: str = "lm"  # "lm" (language modeling) | "chess" (action-value chess engine)
     model: ModelConfig = field(default_factory=ModelConfig)
     data: DataConfig = field(default_factory=DataConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
 
     def validate(self) -> RunConfig:
+        _check(self.task in {"lm", "chess"}, "task must be 'lm' or 'chess'")
         self.model.validate()
         self.data.validate()
         self.train.validate()
@@ -149,11 +157,12 @@ class RunConfig:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> RunConfig:
         raw = dict(raw)
-        unknown = set(raw) - {"name", "description", "model", "data", "train"}
+        unknown = set(raw) - {"name", "description", "task", "model", "data", "train"}
         _check(not unknown, f"Unknown top-level config keys: {sorted(unknown)}")
         return cls(
             name=raw.get("name", "run"),
             description=raw.get("description", ""),
+            task=raw.get("task", "lm"),
             model=_build(ModelConfig, raw.get("model", {}), "model"),
             data=_build(DataConfig, raw.get("data", {}), "data"),
             train=_build(TrainConfig, raw.get("train", {}), "train"),

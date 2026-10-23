@@ -1,0 +1,28 @@
+# ~6.8M-parameter chess model for Apple Silicon (MPS) or a GPU; DeepMind's smallest
+# action-value model in "Grandmaster-level chess without search" was a similar size.
+name = "chess-small"
+description = "6.8M-parameter action-value chess transformer (no search)"
+task = "chess"
+
+[model]
+n_layer = 8
+n_head = 8
+n_embd = 256
+dropout = 0.0
+num_classes = 128
+
+[data]
+dataset = "chess-demo"
+
+[train]
+batch_size = 512
+max_steps = 20000
+learning_rate = 1e-3
+min_lr = 1e-4
+warmup_steps = 500
+weight_decay = 0.01
+eval_interval = 1000
+eval_iters = 40
+log_interval = 50
+keep_checkpoints = 3
+precision = "auto"

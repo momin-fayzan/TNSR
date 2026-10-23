@@ -34,6 +34,10 @@ def tokenizer_from_dict(raw: dict[str, Any]) -> Tokenizer:
         return CharTokenizer.from_dict(raw)
     if kind == "bpe":
         return BPETokenizer.from_dict(raw)
+    if kind == "chess":
+        from tnsr_core.chess.encoding import ChessTokenizer
+
+        return ChessTokenizer.from_dict(raw)
     raise ValueError(f"Unknown tokenizer kind {kind!r}")
 
 
