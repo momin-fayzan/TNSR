@@ -3,6 +3,13 @@
 For a position, every legal move is paired with the position encoding, the model predicts a
 win-probability distribution for each pair, and the engine plays the move with the highest
 expected win probability. Illegal moves are impossible because only legal moves are scored.
+
+With ``rules=True`` the engine also applies the game rules to the move itself: a move that
+checkmates is worth a certain win and a move that ends the game in a draw (stalemate,
+insufficient material, a repetition or fifty-move claim) is worth exactly one half. This looks
+at no opponent replies and calls no model on any later position; it replaces the model's
+estimate only where the rules already know the answer, including repetitions, which the
+model cannot see because a FEN has no move history.
 """
 
 from __future__ import annotations
@@ -39,12 +46,14 @@ class ChessEngine:
         device: torch.device,
         head: ValueHead | int,
         model_id: str = "",
+        rules: bool = False,
     ):
         self.model = model.eval()
         self.tokenizer = tokenizer
         self.device = device
         self.head = ValueHead(head) if isinstance(head, int) else head
         self.model_id = model_id
+        self.rules = rules
         self._win = torch.tensor(self.head.win_values, dtype=torch.float32, device=device)
         self._rank = torch.tensor(self.head.rank_values, dtype=torch.float32, device=device)
 
@@ -53,7 +62,9 @@ class ChessEngine:
         return self.head.value_bins
 
     @classmethod
-    def from_checkpoint(cls, path: str | Path, device: str = "auto") -> ChessEngine:
+    def from_checkpoint(
+        cls, path: str | Path, device: str = "auto", rules: bool = False
+    ) -> ChessEngine:
         loaded = load_checkpoint(Path(path), "cpu")
         if not isinstance(loaded.tokenizer, ChessTokenizer) or loaded.meta.get("task") != "chess":
             raise CheckpointError(f"{path} is not a TNSR chess checkpoint")
@@ -63,7 +74,9 @@ class ChessEngine:
             raise CheckpointError(f"{path}: {exc}") from exc
         info = select_inference_device(device, loaded.model.num_parameters())
         loaded.model.to(info.device)
-        return cls(loaded.model, loaded.tokenizer, info.device, head, checkpoint_id(Path(path)))
+        return cls(
+            loaded.model, loaded.tokenizer, info.device, head, checkpoint_id(Path(path)), rules
+        )
 
     @torch.no_grad()
     def analyse(self, board: chess.Board) -> list[MoveScore]:
@@ -78,6 +91,12 @@ class ChessEngine:
         probs = torch.softmax(logits.float(), dim=-1)
         win = (probs @ self._win).cpu().tolist()
         rank = (probs @ self._rank).cpu().tolist()
+        if self.rules:
+            for i, m in enumerate(moves):
+                result = move_result(board, m)
+                if result is not None:
+                    win[i] = result
+                    rank[i] = 2.0 if result == 1.0 else result  # mate in one beats everything
         scored = [
             (r, MoveScore(m.uci(), board.san(m), w))
             for m, w, r in zip(moves, win, rank, strict=True)
@@ -90,6 +109,19 @@ class ChessEngine:
         if not scores:
             raise ValueError("No legal moves: the game is over")
         return chess.Move.from_uci(scores[0].uci)
+
+
+def move_result(board: chess.Board, move: chess.Move) -> float | None:
+    """Exact result for the mover if ``move`` ends the game by rule (1 or 0.5), else None."""
+    board.push(move)
+    try:
+        if board.is_checkmate():
+            return 1.0
+        if board.is_stalemate() or board.is_insufficient_material() or board.can_claim_draw():
+            return 0.5
+        return None
+    finally:
+        board.pop()
 
 
 def win_prob_to_cp(p: float) -> int:

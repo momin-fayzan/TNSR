@@ -383,3 +383,84 @@ def test_endgame_generator_is_legal_and_deterministic():
     for fen in a:
         b = chess.Board(fen)
         assert b.is_valid() and not b.is_game_over() and len(b.piece_map()) <= 7
+
+
+def test_rules_scoring_takes_mate_and_avoids_stalemate(chess_dataset):
+    from tnsr_core.chess.engine import move_result
+
+    cfg = load_config("chess-tiny", {"train.max_steps": 5, "train.eval_interval": 5})
+    ckpt = Trainer.create(cfg, log=lambda _m: None).train().last_checkpoint
+    # Qh7# mates; Qg6 (among others) stalemates the bare king.
+    board = chess.Board("7k/8/5K2/8/8/8/8/6Q1 w - - 0 1")
+    assert move_result(board, chess.Move.from_uci("g1g7")) == 1.0
+    assert move_result(board, chess.Move.from_uci("g1g6")) == 0.5
+    assert move_result(board, chess.Move.from_uci("g1a1")) is None
+    assert board.fen() == "7k/8/5K2/8/8/8/8/6Q1 w - - 0 1"  # board left untouched
+
+    plain = ChessEngine.from_checkpoint(ckpt, "cpu")
+    ruled = ChessEngine.from_checkpoint(ckpt, "cpu", rules=True)
+    scores = {s.uci: s.win_prob for s in ruled.analyse(board)}
+    assert scores["g1g7"] == 1.0 and scores["g1g6"] == 0.5
+    best = ruled.best_move(board)
+    board.push(best)
+    assert board.is_checkmate()
+    assert len(plain.analyse(chess.Board())) == 20
+
+    # A move that allows a threefold-repetition claim is a draw, which needs the game history.
+    hist = chess.Board("7k/8/8/8/8/8/R7/K7 w - - 0 1")
+    for uci in ["a2b2", "h8g8", "b2a2", "g8h8", "a2b2", "h8g8", "b2a2"]:
+        hist.push_uci(uci)
+    assert move_result(hist, chess.Move.from_uci("g8h8")) == 0.5
+
+
+def test_combined_datasets_train_together(home):
+    items_a = [
+        (b.fen(), material_label(b), "val" if i % 6 == 0 else "train")
+        for i, b in enumerate(random_positions(60, seed=1))
+    ]
+    items_b = [
+        (b.fen(), material_label(b), "val" if i % 6 == 0 else "train")
+        for i, b in enumerate(random_positions(60, seed=2))
+    ]
+    pa = build_dataset_from_labels("chess-a", items_a, source="a", labeling="material")
+    pb = build_dataset_from_labels("chess-b", items_b, source="b", labeling="material")
+    tok = ChessTokenizer()
+    both = ChessSplit([pa, pb], "train", tok)
+    assert both.num_records == (
+        ChessSplit(pa, "train", tok).num_records + ChessSplit(pb, "train", tok).num_records
+    )
+    assert both.num_positions == len(both.fens)
+
+    cfg = load_config("chess-tiny", {"data.dataset": "chess-a+chess-b", "train.max_steps": 4})
+    result = Trainer.create(cfg, log=lambda _m: None).train()
+    assert result.status == "completed"
+    import json
+
+    ref = json.loads((result.run_dir / "run.json").read_text())["dataset"]
+    assert ref["name"] == "chess-a+chess-b"
+    assert ref["identity"].count("+") == 1
+    assert len(ref["sources"]) == 2
+    with pytest.raises(ChessDataError):
+        Trainer.create(
+            load_config("chess-tiny", {"data.dataset": "chess-a+missing"}), log=lambda _m: None
+        )
+
+
+def test_collect_games_writes_labelable_pgn(chess_dataset, tmp_path):
+    import chess.pgn
+
+    from tnsr_core.chess.selfplay import collect_games
+
+    cfg = load_config("chess-tiny", {"train.max_steps": 5, "train.eval_interval": 5})
+    ckpt = Trainer.create(cfg, log=lambda _m: None).train().last_checkpoint
+    engine = ChessEngine.from_checkpoint(ckpt, "cpu")
+    out = tmp_path / "tnsr-test.pgn"
+    collect_games(engine, out, random_games=3, max_plies=40, log=lambda _m: None)
+    with out.open() as fh:
+        games = [g for g in iter(lambda: chess.pgn.read_game(fh), None)]
+    assert len(games) == 3
+    assert len({g.headers["Site"] for g in games}) == 3
+    for g in games:
+        assert not g.errors and len(list(g.mainline_moves())) >= 4
+    with pytest.raises(FileExistsError):
+        collect_games(engine, out, random_games=1, log=lambda _m: None)

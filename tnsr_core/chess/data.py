@@ -282,6 +282,7 @@ def prepare_chess_dataset(
     min_elo: int = 0,
     endgames: int = 0,
     stockfish: str | None = None,
+    source_license: str = LICHESS_LICENSE,
     root: Path | None = None,
     log: Callable[[str], None] = print,
 ) -> Path:
@@ -343,7 +344,7 @@ def prepare_chess_dataset(
             "kind": DATASET_KIND,
             "name": name,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "source": {"file": pgn_path.name, "sha256": sha.hexdigest(), "license": LICHESS_LICENSE},
+            "source": {"file": pgn_path.name, "sha256": sha.hexdigest(), "license": source_license},
             "sampling": {"per_game": per_game, "max_positions": max_positions, "seed": seed, "min_elo": min_elo, "endgames": endgames, **stats},
             "split": {"method": "sha256(seed:game Site) per game; val positions seen in train removed", "val_fraction": val_fraction},
             "labeling": {"engine": engine_name, "nodes_per_move": nodes, "value": "win probability for side to move (Lichess cp model; mate = 1/0)"},
@@ -445,10 +446,11 @@ def resolve_chess_dataset(name_or_path: str) -> Path:
 class ChessSplit:
     """All (position, move, win probability) records of one split, held in memory."""
 
-    def __init__(self, path: Path, split: str, tokenizer: ChessTokenizer):
+    def __init__(self, path: Path | list[Path], split: str, tokenizer: ChessTokenizer):
+        paths = path if isinstance(path, list) else [path]
         states, state_idx, actions, probs, mates, fens = [], [], [], [], [], []
         base = 0
-        for f in _shard_files(path, split):
+        for f in [f for p in paths for f in _shard_files(p, split)]:
             with np.load(f) as z:
                 s = z["states"]
                 offs = z["move_offsets"]
@@ -467,7 +469,7 @@ class ChessSplit:
                 fens.extend(z["fens"].tolist())
                 base += len(s)
         if not states:
-            raise ChessDataError(f"No {split} shards in {path}")
+            raise ChessDataError(f"No {split} shards in {', '.join(map(str, paths))}")
         self.tokenizer = tokenizer
         self.states = torch.from_numpy(np.concatenate(states).astype(np.int64))
         self.state_idx = torch.from_numpy(np.concatenate(state_idx).astype(np.int64))

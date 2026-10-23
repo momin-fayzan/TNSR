@@ -21,8 +21,10 @@ class ChessTask:
     kind = "chess"
 
     def __init__(self, config: RunConfig, log: Callable[[str], None]):
-        self.path = resolve_chess_dataset(config.data.dataset)
-        self.meta = json.loads((self.path / "meta.json").read_text())
+        # "a+b" trains on several datasets at once (e.g. Lichess positions + on-policy games).
+        self.paths = [resolve_chess_dataset(n) for n in config.data.dataset.split("+")]
+        self.metas = [json.loads((p / "meta.json").read_text()) for p in self.paths]
+        self.meta = self.metas[0]
         self.tokenizer = ChessTokenizer(move_marks=config.data.move_marks)
         mc = config.model
         self.head = ValueHead(config.data.value_bins, config.data.mate_classes)
@@ -37,27 +39,40 @@ class ChessTask:
                 log(f"chess task: setting model.{key}={value}")
                 setattr(mc, key, value)
         self.value_loss = config.train.value_loss
-        self.train = ChessSplit(self.path, "train", self.tokenizer)
-        self.val = ChessSplit(self.path, "val", self.tokenizer)
+        self.train = ChessSplit(self.paths, "train", self.tokenizer)
+        self.val = ChessSplit(self.paths, "val", self.tokenizer)
+        # Move quality is always measured on the first dataset's validation positions, so runs
+        # that add extra datasets stay comparable with runs that do not.
         self._eval_positions = list(iter_positions(self.val))[:MOVE_EVAL_POSITIONS]
         log(
-            f"chess dataset {self.meta['name']}: {self.train.num_records:,} train / "
+            f"chess dataset {self.name}: {self.train.num_records:,} train / "
             f"{self.val.num_records:,} val (position, move) records"
         )
 
     @property
+    def name(self) -> str:
+        return "+".join(m["name"] for m in self.metas)
+
+    @property
     def identity(self) -> str:
-        return self.meta["identity"]
+        return "+".join(m["identity"] for m in self.metas)
 
     def dataset_ref(self) -> dict[str, Any]:
-        return {
-            "name": self.meta["name"],
-            "identity": self.meta["identity"],
+        stats: dict[str, int] = {}
+        for m in self.metas:
+            for k, v in m.get("stats", {}).items():
+                stats[k] = stats.get(k, 0) + v
+        ref = {
+            "name": self.name,
+            "identity": self.identity,
             "kind": "chess_action_value",
-            **self.meta.get("stats", {}),
+            **stats,
             "labeling": self.meta.get("labeling"),
             "source": self.meta.get("source"),
         }
+        if len(self.metas) > 1:
+            ref["sources"] = [m.get("source") for m in self.metas]
+        return ref
 
     def train_batch(
         self, batch_size: int, rng: np.random.Generator

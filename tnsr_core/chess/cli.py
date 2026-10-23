@@ -29,7 +29,7 @@ def _fail(message: str) -> None:
     raise typer.Exit(1)
 
 
-def _engine(model: str | None, device: str):
+def _engine(model: str | None, device: str, rules: bool = False):
     from tnsr_core.checkpoints import (
         CheckpointError,
         discover_checkpoints,
@@ -54,7 +54,7 @@ def _engine(model: str | None, device: str):
                 _fail("No chess checkpoints found. Train one: tnsr train --config chess-mini")
                 raise AssertionError
             path = tnsr_home() / choice["id"]
-        return ChessEngine.from_checkpoint(path, device)
+        return ChessEngine.from_checkpoint(path, device, rules)
     except (CheckpointError, ValueError) as exc:
         _fail(str(exc))
         raise
@@ -133,11 +133,52 @@ def prepare(
         prepare_chess_dataset(
             name, pgn, max_positions=max_positions, per_game=per_game, nodes=nodes,
             workers=workers or None, val_fraction=val_fraction, min_elo=min_elo, seed=seed,
-            endgames=endgames,
+            endgames=endgames, source_license=_pgn_license(Path(pgn)),
             log=lambda m: console.print(f"[dim]{m}[/]"),
         )  # fmt: skip
     except (ChessDataError, ValueError, FileExistsError) as exc:
         _fail(str(exc))
+
+
+def _pgn_license(pgn: Path) -> str:
+    from .data import LICHESS_LICENSE
+    from .selfplay import COLLECTED_LICENSE, COLLECTED_PREFIX
+
+    return COLLECTED_LICENSE if pgn.name.startswith(COLLECTED_PREFIX) else LICHESS_LICENSE
+
+
+@chess_app.command("collect")
+def collect(
+    model: Annotated[
+        str | None, typer.Argument(help="Checkpoint id, run id or path (default: best chess model)")
+    ] = None,
+    name: Annotated[str, typer.Option(help="Output name: datasets/raw/tnsr-<name>.pgn")] = "games",
+    random_games: Annotated[int, typer.Option(help="Games against a random mover")] = 200,
+    stockfish_games: Annotated[int, typer.Option(help="Games against Stockfish per level")] = 0,
+    levels: Annotated[str, typer.Option(help="Comma-separated Stockfish UCI_Elo levels")] = "1320",
+    movetime: Annotated[float, typer.Option(help="Stockfish seconds per move")] = 0.05,
+    seed: Annotated[int, typer.Option()] = 0,
+    device: Annotated[str, typer.Option()] = "auto",
+) -> None:
+    """Play the model to collect its own positions (label them with `tnsr chess prepare`)."""
+    from tnsr_core.paths import datasets_dir, safe_join, validate_name
+
+    from .selfplay import COLLECTED_PREFIX, collect_games
+
+    try:
+        validate_name(name, "name")
+        out = safe_join(datasets_dir() / "raw", f"{COLLECTED_PREFIX}{name}.pgn")
+        if out.exists():
+            _fail(f"{out} already exists; choose another --name")
+        engine = _engine(model, device)
+        collect_games(
+            engine, out, random_games=random_games, stockfish_games=stockfish_games,
+            levels=[int(x) for x in levels.split(",") if x], movetime=movetime, seed=seed,
+            log=lambda m: console.print(f"[dim]{m}[/]"),
+        )  # fmt: skip
+    except (ValueError, FileExistsError) as exc:
+        _fail(str(exc))
+    console.print(f"Saved {out}. Label it: tnsr chess prepare {out} --name <dataset> --per-game 8")
 
 
 @chess_app.command("puzzles")
@@ -163,6 +204,9 @@ def evaluate(
     ] = "1320,1600,1900",
     movetime: Annotated[float, typer.Option(help="Stockfish seconds per move")] = 0.05,
     device: Annotated[str, typer.Option()] = "auto",
+    rules: Annotated[
+        bool, typer.Option(help="Score game-ending moves by the rules (mate = win, draws = 1/2)")
+    ] = False,
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Measure strength: held-out move quality, puzzle accuracy, games vs Stockfish."""
@@ -174,7 +218,7 @@ def evaluate(
     from .evaluate import evaluate_puzzles, evaluation_summary, play_match, random_mover_baseline
     from .task import MOVE_EVAL_POSITIONS, move_quality
 
-    engine = _engine(model, device)
+    engine = _engine(model, device, rules)
     path = Path(engine.model_id) if Path(engine.model_id).is_absolute() else None
     from tnsr_core.paths import tnsr_home
 
@@ -190,9 +234,11 @@ def evaluate(
         "step": meta.get("step"),
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "device": str(engine.device),
+        "rules": rules,
     }
     mq = None
-    ds = (meta.get("dataset") or {}).get("name")
+    # Combined datasets ("a+b") are judged on the first one, as during training.
+    ds = ((meta.get("dataset") or {}).get("name") or "").split("+")[0]
     if ds:
         try:
             split = ChessSplit(resolve_chess_dataset(ds), "val", ChessTokenizer())
@@ -224,7 +270,8 @@ def evaluate(
     if as_json:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return
-    table = Table(title=f"{engine.model_id} (step {meta.get('step')})", show_header=False)
+    title = f"{engine.model_id} (step {meta.get('step')}){' + rules' if rules else ''}"
+    table = Table(title=title, show_header=False)
     if mq:
         table.add_row(
             "held-out top-1 move = Stockfish",
@@ -257,12 +304,15 @@ def analyse(
         str | None, typer.Option(help="Checkpoint (default: best chess model)")
     ] = None,
     top: Annotated[int, typer.Option()] = 8,
+    rules: Annotated[
+        bool, typer.Option(help="Score game-ending moves by the rules (mate = win, draws = 1/2)")
+    ] = False,
     device: Annotated[str, typer.Option()] = "auto",
 ) -> None:
     """Show the model's win probability for each legal move of a position."""
     import chess
 
-    engine = _engine(model, device)
+    engine = _engine(model, device, rules)
     board = chess.Board() if fen == "startpos" else chess.Board(fen)
     table = Table("move", "win prob (side to move)")
     for s in engine.analyse(board)[:top]:
@@ -275,12 +325,15 @@ def analyse(
 def play(
     color: Annotated[str, typer.Option(help="Your colour: white or black")] = "white",
     model: Annotated[str | None, typer.Option()] = None,
+    rules: Annotated[
+        bool, typer.Option(help="Score game-ending moves by the rules (mate = win, draws = 1/2)")
+    ] = False,
     device: Annotated[str, typer.Option()] = "auto",
 ) -> None:
     """Play against the model in the terminal (moves in SAN or UCI, 'quit' to stop)."""
     import chess
 
-    engine = _engine(model, device)
+    engine = _engine(model, device, rules)
     board = chess.Board()
     human_white = color.lower().startswith("w")
     while not board.is_game_over():
@@ -306,9 +359,12 @@ def play(
 @chess_app.command("uci")
 def uci(
     model: Annotated[str | None, typer.Argument()] = None,
+    rules: Annotated[
+        bool, typer.Option(help="Score game-ending moves by the rules (mate = win, draws = 1/2)")
+    ] = False,
     device: Annotated[str, typer.Option()] = "auto",
 ) -> None:
     """Run as a UCI engine (for chess GUIs, cutechess-cli, lichess-bot)."""
     from .engine import run_uci
 
-    run_uci(lambda: _engine(model, device))
+    run_uci(lambda: _engine(model, device, rules))
