@@ -28,7 +28,7 @@ import torch
 from tnsr_core.checkpoints import CheckpointError, checkpoint_id, load_checkpoint
 from tnsr_core.device import select_inference_device
 
-from .encoding import ChessTokenizer, ValueHead, encode_pairs
+from .encoding import ChessTokenizer, ValueHead, move_logits
 
 
 @dataclass
@@ -84,10 +84,9 @@ class ChessEngine:
         moves = list(board.legal_moves)
         if not moves:
             return []
-        x = torch.from_numpy(
-            encode_pairs(self.tokenizer, board.fen(), [m.uci() for m in moves])
-        ).to(self.device)
-        logits, _ = self.model(x)
+        logits = move_logits(
+            self.model, self.tokenizer, board.fen(), [m.uci() for m in moves], self.device
+        )
         probs = torch.softmax(logits.float(), dim=-1)
         win = (probs @ self._win).cpu().tolist()
         rank = (probs @ self._rank).cpu().tolist()

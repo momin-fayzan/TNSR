@@ -471,12 +471,18 @@ class ChessSplit:
         if not states:
             raise ChessDataError(f"No {split} shards in {', '.join(map(str, paths))}")
         self.tokenizer = tokenizer
-        self.states = torch.from_numpy(np.concatenate(states).astype(np.int64))
+        # uint8 in memory (77 bytes per position); widened to int64 per batch.
+        self.states = torch.from_numpy(np.concatenate(states).astype(np.uint8))
         self.state_idx = torch.from_numpy(np.concatenate(state_idx).astype(np.int64))
         self.actions = torch.from_numpy(np.concatenate(actions).astype(np.int64))
         self.win_probs = torch.from_numpy(np.concatenate(probs).astype(np.float32))
         self.mates = torch.from_numpy(np.concatenate(mates).astype(np.int64))
         self.fens = fens
+        # Records of position i are rows pos_offsets[i] : pos_offsets[i + 1] (shards store them
+        # contiguously), which lets a batch hold whole positions.
+        counts = torch.bincount(self.state_idx, minlength=self.num_positions)
+        self.pos_offsets = torch.zeros(self.num_positions + 1, dtype=torch.int64)
+        self.pos_offsets[1:] = torch.cumsum(counts, 0)
 
     @property
     def num_records(self) -> int:
@@ -492,7 +498,7 @@ class ChessSplit:
         """Token ids (B, 78), target classes (B,), target win probabilities (B,)."""
         if isinstance(head, int):
             head = ValueHead(head)
-        st = self.states[self.state_idx[idx]]
+        st = self.states[self.state_idx[idx]].long()
         if self.tokenizer.move_marks:
             st = self.tokenizer.mark_moves(st, self.actions[idx])
         act = (self.actions[idx] + self.tokenizer.action_offset).unsqueeze(1)
@@ -500,6 +506,29 @@ class ChessSplit:
         wp = self.win_probs[idx]
         y = torch.from_numpy(head.classes(wp.numpy(), self.mates[idx].numpy()))
         return x, y, wp
+
+    def position_batch(
+        self, positions: torch.Tensor, head: ValueHead, soft: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Whole positions for shared-board models: token ids (P, 77 + K) holding each position
+        and its K (padded) labeled moves, and targets: classes (P, K) with -100 for padding,
+        or with ``soft`` HL-Gauss rows (P, K, C) that are all zero for padding."""
+        start = self.pos_offsets[positions]
+        count = self.pos_offsets[positions + 1] - start
+        k = int(count.max())
+        slot = torch.arange(k).unsqueeze(0)
+        valid = slot < count.unsqueeze(1)
+        rec = torch.where(valid, start.unsqueeze(1) + slot, start.unsqueeze(1))
+        acts = torch.where(valid, self.actions[rec] + self.tokenizer.action_offset, 0)
+        x = torch.cat([self.states[positions].long(), acts], dim=1)
+        flat = rec.reshape(-1)
+        if soft:
+            t = self.soft_targets(flat, head).reshape(len(positions), k, -1)
+            return x, t * valid.unsqueeze(-1)
+        y = torch.from_numpy(
+            head.classes(self.win_probs[flat].numpy(), self.mates[flat].numpy())
+        ).reshape(len(positions), k)
+        return x, torch.where(valid, y, -100)
 
     def soft_targets(self, idx: torch.Tensor, head: ValueHead) -> torch.Tensor:
         return torch.from_numpy(

@@ -19,6 +19,7 @@ from typing import Any
 
 import chess
 import numpy as np
+import torch
 
 from tnsr_core.tokenizer.base import EOS, Tokenizer
 
@@ -101,8 +102,6 @@ class ChessTokenizer(Tokenizer):
         """Return copies of (B, 77) state token ids with each row's move marked on the board.
 
         Accepts numpy arrays or torch tensors (returns the same type)."""
-        import torch
-
         as_torch = isinstance(states, torch.Tensor)
         st = states.cpu().numpy().copy() if as_torch else np.array(states, copy=True)
         act = (
@@ -221,8 +220,6 @@ def win_prob_to_bin(win_prob: np.ndarray | float, num_bins: int) -> np.ndarray:
 def hl_gauss_targets(win_prob: np.ndarray, num_bins: int, sigma_bins: float = 0.75) -> np.ndarray:
     """Histogram-loss Gaussian targets (Imani et al., 2024): the probability mass a Gaussian
     centred on each label puts in every bin. Shape (N, num_bins), rows sum to 1."""
-    import torch
-
     edges = torch.from_numpy(bin_edges(num_bins))
     sigma = sigma_bins / num_bins
     p = torch.as_tensor(np.asarray(win_prob, dtype=np.float64)).unsqueeze(1)
@@ -247,6 +244,31 @@ def encode_pairs(tokenizer: ChessTokenizer, fen: str, ucis: Iterable[str]) -> np
             out[:, :STATE_LEN], out[:, STATE_LEN] - tokenizer.action_offset
         )
     return out
+
+
+def encode_shared(tokenizer: ChessTokenizer, fen: str, ucis: Iterable[str]) -> np.ndarray:
+    """(1, STATE_LEN + num_moves) token ids: the position once, then every candidate move
+    (for models with ``query_prefix = STATE_LEN``, which score all moves in one pass)."""
+    if tokenizer.move_marks:
+        raise ValueError("Shared-board encoding cannot mark moves; use move_marks=False")
+    ucis = list(ucis)
+    out = np.empty((1, STATE_LEN + len(ucis)), dtype=np.int64)
+    out[0, :STATE_LEN] = tokenizer.encode_fen(fen)
+    out[0, STATE_LEN:] = [tokenizer.action_id(u) for u in ucis]
+    return out
+
+
+def move_logits(
+    model: torch.nn.Module, tokenizer: ChessTokenizer, fen: str, ucis: list[str],
+    device: torch.device,
+) -> torch.Tensor:  # fmt: skip
+    """Value-head logits (num_moves, num_classes) for the given moves of a position."""
+    if getattr(model.config, "query_prefix", 0):
+        x = torch.from_numpy(encode_shared(tokenizer, fen, ucis)).to(device)
+        logits, _ = model(x)
+        return logits[0]
+    logits, _ = model(torch.from_numpy(encode_pairs(tokenizer, fen, ucis)).to(device))
+    return logits
 
 
 # -- value head: win-probability bins + mate-distance classes ------------------------------

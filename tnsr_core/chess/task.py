@@ -12,7 +12,7 @@ import torch
 from tnsr_core.config import RunConfig
 
 from .data import ChessSplit, iter_positions, resolve_chess_dataset
-from .encoding import SEQ_LEN, ChessTokenizer, ValueHead, encode_pairs
+from .encoding import SEQ_LEN, STATE_LEN, ChessTokenizer, ValueHead, move_logits
 
 MOVE_EVAL_POSITIONS = 400
 
@@ -25,6 +25,11 @@ class ChessTask:
         self.paths = [resolve_chess_dataset(n) for n in config.data.dataset.split("+")]
         self.metas = [json.loads((p / "meta.json").read_text()) for p in self.paths]
         self.meta = self.metas[0]
+        # Shared board: one sequence per position (board + all its moves) and batch_size counts
+        # positions; otherwise one sequence per (position, move) record.
+        self.shared = config.data.shared_board
+        if self.shared and config.data.move_marks:
+            raise ValueError("data.shared_board needs data.move_marks = false")
         self.tokenizer = ChessTokenizer(move_marks=config.data.move_marks)
         mc = config.model
         self.head = ValueHead(config.data.value_bins, config.data.mate_classes)
@@ -33,6 +38,7 @@ class ChessTask:
             "block_size": SEQ_LEN,
             "causal": False,
             "num_classes": self.head.num_classes,
+            "query_prefix": STATE_LEN if self.shared else 0,
         }
         for key, value in fixed.items():
             if getattr(mc, key) != value:
@@ -41,6 +47,7 @@ class ChessTask:
         self.value_loss = config.train.value_loss
         self.train = ChessSplit(self.paths, "train", self.tokenizer)
         self.val = ChessSplit(self.paths, "val", self.tokenizer)
+        self._train_positions = self._labeled_positions(self.train)
         # Move quality is always measured on the first dataset's validation positions, so runs
         # that add extra datasets stay comparable with runs that do not.
         self._eval_positions = list(iter_positions(self.val))[:MOVE_EVAL_POSITIONS]
@@ -74,9 +81,18 @@ class ChessTask:
             ref["sources"] = [m.get("source") for m in self.metas]
         return ref
 
+    @staticmethod
+    def _labeled_positions(split: ChessSplit) -> torch.Tensor:
+        return torch.nonzero(split.pos_offsets[1:] > split.pos_offsets[:-1]).squeeze(1)
+
     def train_batch(
         self, batch_size: int, rng: np.random.Generator
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.shared:
+            pick = torch.from_numpy(rng.integers(0, len(self._train_positions), size=batch_size))
+            return self.train.position_batch(
+                self._train_positions[pick], self.head, soft=self.value_loss == "hl_gauss"
+            )
         idx = torch.from_numpy(rng.integers(0, self.train.num_records, size=batch_size))
         x, y, _ = self.train.batch(idx, self.head)
         if self.value_loss == "hl_gauss":
@@ -88,6 +104,14 @@ class ChessTask:
         self, split: str, n_batches: int, batch_size: int
     ) -> list[tuple[torch.Tensor, torch.Tensor]]:
         data = self.train if split == "train" else self.val
+        if self.shared:
+            pos = self._labeled_positions(data)
+            n = min(len(pos), n_batches * batch_size)
+            pick = pos[np.linspace(0, len(pos) - 1, num=n).astype(np.int64)]
+            return [
+                data.position_batch(pick[i : i + batch_size], self.head)
+                for i in range(0, n, batch_size)
+            ]
         total = min(data.num_records, n_batches * batch_size)
         idx = torch.from_numpy(np.linspace(0, data.num_records - 1, num=total).astype(np.int64))
         out = []
@@ -97,6 +121,9 @@ class ChessTask:
         return out
 
     def tokens_per_example(self) -> int:
+        if self.shared:  # board + average number of labeled moves
+            moves = self.train.num_records / max(1, self.train.num_positions)
+            return int(round(STATE_LEN + moves))
         return SEQ_LEN
 
     @torch.no_grad()
@@ -130,8 +157,7 @@ def move_quality(
     hits = 0
     regrets = []
     for fen, moves in positions:
-        x = torch.from_numpy(encode_pairs(tokenizer, fen, [u for u, _ in moves]))
-        logits, _ = model(x.to(device))
+        logits = move_logits(model, tokenizer, fen, [u for u, _ in moves], device)
         choice = int(torch.argmax(torch.softmax(logits.float(), dim=-1) @ rank))
         values = [v for _, v in moves]
         best = max(values)

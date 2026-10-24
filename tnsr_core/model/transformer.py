@@ -85,6 +85,7 @@ class CausalSelfAttention(nn.Module):
         x: torch.Tensor,
         rope: tuple[torch.Tensor, torch.Tensor] | None = None,
         cache: LayerCache | None = None,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, T, C = x.shape
         q, k, v = self.qkv(x).split(C, dim=2)
@@ -107,9 +108,11 @@ class CausalSelfAttention(nn.Module):
         dropout_p = self.dropout if self.training else 0.0
         if not self.causal:
             if self.attn_impl == "sdpa":
-                y = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+                y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=dropout_p)
             else:
                 att = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+                if mask is not None:
+                    att = att.masked_fill(~mask, float("-inf"))
                 att = self.attn_drop(F.softmax(att.float(), dim=-1).to(q.dtype))
                 y = att @ v
         elif self.attn_impl == "sdpa":
@@ -157,10 +160,13 @@ class Block(nn.Module):
         self.norm2 = make_norm(cfg)
         self.mlp = MLP(cfg)
 
-    def forward(self, x, rope=None, cache=None):
-        x = x + self.attn(self.norm1(x), rope=rope, cache=cache)
+    def forward(self, x, rope=None, cache=None, mask=None):
+        x = x + self.attn(self.norm1(x), rope=rope, cache=cache, mask=mask)
         x = x + self.mlp(self.norm2(x))
         return x
+
+
+MAX_QUERIES = 256  # query tokens per sequence in shared-context mode (chess: <= 218 moves)
 
 
 class TNSRModel(nn.Module):
@@ -232,6 +238,9 @@ class TNSRModel(nn.Module):
         if cache is not None and not self.config.causal:
             raise ValueError("KV caching requires a causal model")
         start = cache[0].length if cache else 0
+        prefix = self.config.query_prefix
+        if prefix:
+            return self._forward_queries(idx, targets)
         if start + T > self.config.block_size:
             raise ValueError(
                 f"Sequence length {start + T} exceeds block_size {self.config.block_size}"
@@ -259,6 +268,38 @@ class TNSRModel(nn.Module):
             loss = F.cross_entropy(
                 logits.float().reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-100
             )
+        return logits, loss
+
+    def _forward_queries(
+        self, idx: torch.Tensor, targets: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Shared-context mode: logits (B, Q, num_classes) for the Q query tokens.
+
+        ``targets`` are class ids (B, Q) with -100 for padding, or soft targets (B, Q, C)
+        whose all-zero rows are padding.
+        """
+        prefix = self.config.query_prefix
+        B, T = idx.shape
+        if not prefix < T <= prefix + MAX_QUERIES:
+            raise ValueError(f"Expected {prefix} context tokens plus 1..{MAX_QUERIES} queries")
+        pos = torch.arange(T, device=idx.device).clamp(max=prefix)
+        x = self.drop(self.tok_emb(idx) + self.pos_emb(pos))  # type: ignore[misc]
+        # Context tokens see the context; each query sees the context and itself.
+        rows = torch.arange(T, device=idx.device).unsqueeze(1)
+        cols = torch.arange(T, device=idx.device).unsqueeze(0)
+        mask = (cols < prefix) | (rows == cols)
+        for block in self.blocks:
+            x = block(x, mask=mask)
+        logits = self.lm_head(self.norm_f(x[:, prefix:, :]))
+        if targets is None:
+            return logits, None
+        flat = logits.float().reshape(-1, logits.size(-1))
+        if targets.is_floating_point():
+            t = targets.reshape(-1, targets.size(-1))
+            keep = t.sum(-1) > 0
+            loss = -(t[keep] * F.log_softmax(flat[keep], dim=-1)).sum(-1).mean()
+        else:
+            loss = F.cross_entropy(flat, targets.reshape(-1), ignore_index=-100)
         return logits, loss
 
     def optimizer_groups(self, weight_decay: float) -> list[dict]:

@@ -181,6 +181,56 @@ def collect(
     console.print(f"Saved {out}. Label it: tnsr chess prepare {out} --name <dataset> --per-game 8")
 
 
+def _parse_range(text: str) -> list[int]:
+    out: list[int] = []
+    for part in text.split(","):
+        lo, _, hi = part.partition("-")
+        out.extend(range(int(lo), int(hi or lo) + 1))
+    return out
+
+
+@chess_app.command("import-chessbench")
+def import_chessbench_cmd(
+    files: Annotated[
+        str, typer.Option(help="ChessBench train file indices, e.g. 0 or 0-3 (of 0-2147)")
+    ] = "0",
+    name: Annotated[str, typer.Option(help="Dataset name under datasets/")] = "chessbench",
+    max_records: Annotated[int, typer.Option(help="Stop after this many records (0 = all)")] = 0,
+    exclude: Annotated[
+        str,
+        typer.Option(help="Comma-separated datasets whose validation positions are left out"),
+    ] = "chess-v1",
+) -> None:
+    """Download DeepMind's ChessBench action values (CC-BY 4.0) and import them."""
+    import chess
+
+    from .chessbench import download_train_file, import_chessbench
+    from .data import ChessDataError, ChessSplit, resolve_chess_dataset
+    from .encoding import ChessTokenizer
+    from .evaluate import load_puzzles
+
+    log = lambda m: console.print(f"[dim]{m}[/]")  # noqa: E731
+    try:
+        indices = _parse_range(files)
+        excluded: set[str] = set()
+        for ds in [d for d in exclude.split(",") if d]:
+            excluded |= set(ChessSplit(resolve_chess_dataset(ds), "val", ChessTokenizer()).fens)
+        try:  # never train on evaluation puzzles
+            for row in load_puzzles():
+                board = chess.Board(row["FEN"])
+                for uci in row["Moves"].split():
+                    board.push_uci(uci)
+                    excluded.add(board.fen())
+        except FileNotFoundError:
+            log("no puzzles downloaded; only dataset validation positions are excluded")
+        paths = [download_train_file(i, log=log) for i in indices]
+        import_chessbench(
+            name, paths, max_records=max_records or None, exclude_fens=excluded, log=log
+        )
+    except (ChessDataError, ValueError, FileExistsError) as exc:
+        _fail(str(exc))
+
+
 @chess_app.command("puzzles")
 def puzzles(count: Annotated[int, typer.Option(help="Number of puzzles to keep")] = 2000) -> None:
     """Download Lichess puzzles (CC0) for evaluation."""

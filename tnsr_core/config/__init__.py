@@ -37,6 +37,10 @@ class ModelConfig:
     attn_impl: str = "sdpa"  # "sdpa" (fused PyTorch kernel) | "manual" (explicit mask)
     causal: bool = True  # False = bidirectional attention (encoder, e.g. chess positions)
     num_classes: int = 0  # 0 = next-token LM head; >0 = classify from the last position
+    # > 0: the first query_prefix tokens are a shared context (e.g. a chess position) and every
+    # later token is an independent query that sees only the context and itself, gets a
+    # classifier output, and shares position embedding query_prefix (needs num_classes > 0).
+    query_prefix: int = 0
 
     def validate(self) -> ModelConfig:
         _check(self.vocab_size >= 2, "model.vocab_size must be >= 2")
@@ -62,6 +66,15 @@ class ModelConfig:
             self.num_classes == 0 or self.num_classes >= 2,
             "model.num_classes must be 0 (language model) or >= 2 (classifier)",
         )
+        if self.query_prefix:
+            _check(
+                self.num_classes >= 2 and not self.causal and self.pos_encoding == "learned",
+                "model.query_prefix needs a bidirectional classifier with learned positions",
+            )
+            _check(
+                self.block_size == self.query_prefix + 1,
+                "model.block_size must be query_prefix + 1 (queries share one position)",
+            )
         return self
 
     @property
@@ -75,6 +88,7 @@ class DataConfig:
     move_marks: bool = True  # chess: write the candidate move onto the board tokens
     value_bins: int = 128  # chess: win-probability bins
     mate_classes: int = 0  # chess: extra classes for "mate in n" / "mated in n" (n <= this)
+    shared_board: bool = False  # chess: encode the position once and score all moves together
 
     def validate(self) -> DataConfig:
         _check(bool(self.dataset), "data.dataset must be set")

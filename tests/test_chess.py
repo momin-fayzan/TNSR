@@ -464,3 +464,136 @@ def test_collect_games_writes_labelable_pgn(chess_dataset, tmp_path):
         assert not g.errors and len(list(g.mainline_moves())) >= 4
     with pytest.raises(FileExistsError):
         collect_games(engine, out, random_games=1, log=lambda _m: None)
+
+
+def _bag_bytes(records: list[tuple[str, str, float]]) -> bytes:
+    import struct
+
+    def varint(n: int) -> bytes:
+        out = bytearray()
+        while True:
+            b = n & 0x7F
+            n >>= 7
+            out.append(b | (0x80 if n else 0))
+            if not n:
+                return bytes(out)
+
+    body, limits = b"", []
+    for fen, move, wp in records:
+        rec = varint(len(fen)) + fen.encode() + varint(len(move)) + move.encode()
+        body += rec + struct.pack(">d", wp)
+        limits.append(len(body))
+    return body + b"".join(x.to_bytes(8, "little") for x in limits)
+
+
+def test_chessbench_bag_import(home, tmp_path):
+    from tnsr_core.chess.chessbench import import_chessbench, read_bag
+
+    boards = random_positions(80, seed=3)
+    records = [(b.fen(), uci, wp) for b in boards for uci, wp in material_label(b)]
+    bag = tmp_path / "action_value-00000-of-02148_data.bag"
+    bag.write_bytes(_bag_bytes(records))
+    back = list(read_bag(bag))
+    assert back == [(f, m, pytest.approx(w)) for f, m, w in records]
+
+    excluded = {boards[0].fen()}
+    path = import_chessbench(
+        "chessbench-test", [bag], exclude_fens=excluded, val_fraction=0.2, log=lambda _m: None
+    )
+    tok = ChessTokenizer()
+    train, val = ChessSplit(path, "train", tok), ChessSplit(path, "val", tok)
+    n_excluded = sum(1 for r in records if r[0] == boards[0].fen())
+    assert train.num_records + val.num_records == len(records) - n_excluded
+    assert boards[0].fen() not in train.fens + val.fens
+    assert int((train.mates != 0).sum()) == 0  # ChessBench has no mate distances
+    import json
+
+    meta = json.loads((path / "meta.json").read_text())
+    assert (
+        "CC-BY" in meta["source"]["license"] and meta["sampling"]["records_excluded"] == n_excluded
+    )
+    with pytest.raises(FileExistsError):
+        import_chessbench("chessbench-test", [bag], log=lambda _m: None)
+    bad = tmp_path / "bad.bag"
+    bad.write_bytes(b"\x00" * 4)
+    with pytest.raises(ChessDataError):
+        list(read_bag(bad))
+
+
+def test_shared_board_queries_are_independent():
+    from tnsr_core.config import ModelConfig
+    from tnsr_core.model import TNSRModel
+
+    tok = ChessTokenizer(move_marks=False)
+    cfg = ModelConfig(
+        vocab_size=tok.vocab_size, block_size=STATE_LEN + 1, n_layer=2, n_head=2, n_embd=32,
+        causal=False, num_classes=10, query_prefix=STATE_LEN,
+    )  # fmt: skip
+    torch.manual_seed(0)
+    model = TNSRModel(cfg).eval()
+    board = chess.Board("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3")
+    ucis = [m.uci() for m in board.legal_moves]
+    from tnsr_core.chess.encoding import encode_shared
+
+    with torch.no_grad():
+        together, _ = model(torch.from_numpy(encode_shared(tok, board.fen(), ucis)))
+        for i in (0, 5, len(ucis) - 1):
+            alone, _ = model(torch.from_numpy(encode_shared(tok, board.fen(), [ucis[i]])))
+            assert torch.allclose(together[0, i], alone[0, 0], atol=1e-5)
+        # Reordering the moves only reorders the outputs.
+        rev, _ = model(torch.from_numpy(encode_shared(tok, board.fen(), ucis[::-1])))
+        assert torch.allclose(together[0], rev[0].flip(0), atol=1e-5)
+    with pytest.raises(ValueError):
+        encode_shared(ChessTokenizer(), board.fen(), ucis)  # marks need one sequence per move
+
+
+def test_shared_board_training_and_engine(chess_dataset):
+    cfg = load_config(
+        "chess-tiny",
+        {"data.shared_board": True, "data.move_marks": False, "train.max_steps": 40,
+         "train.batch_size": 16, "train.eval_interval": 20},
+    )  # fmt: skip
+    result = Trainer.create(cfg, log=lambda _m: None).train()
+    assert result.status == "completed"
+    from tnsr_core.training import read_metrics
+
+    evals = [m for m in read_metrics(result.run_dir) if m["type"] == "eval"]
+    assert "move_accuracy" in evals[-1] and evals[-1]["val_loss"] < evals[0]["val_loss"] + 0.5
+    engine = ChessEngine.from_checkpoint(result.last_checkpoint, "cpu")
+    assert engine.model.config.query_prefix == STATE_LEN
+    board = chess.Board()
+    for _ in range(20):
+        if board.is_game_over():
+            break
+        board.push(engine.best_move(board))
+    scores = engine.analyse(chess.Board())
+    assert len(scores) == 20 and scores[0].win_prob >= scores[-1].win_prob
+
+    soft = load_config(
+        "chess-tiny",
+        {"data.shared_board": True, "data.move_marks": False, "train.max_steps": 5,
+         "train.batch_size": 8, "train.value_loss": "hl_gauss", "train.eval_interval": 5},
+    )  # fmt: skip
+    assert Trainer.create(soft, log=lambda _m: None).train().status == "completed"
+    with pytest.raises(ValueError):
+        Trainer.create(load_config("chess-tiny", {"data.shared_board": True}), log=lambda _m: None)
+
+
+def test_position_batch_matches_records(chess_dataset):
+    from tnsr_core.chess.encoding import ValueHead
+
+    tok = ChessTokenizer(move_marks=False)
+    split = ChessSplit(chess_dataset, "train", tok)
+    head = ValueHead(32, 4)
+    pos = torch.tensor([0, 3, 7])
+    x, y = split.position_batch(pos, head)
+    for row, p in enumerate(pos.tolist()):
+        lo, hi = int(split.pos_offsets[p]), int(split.pos_offsets[p + 1])
+        assert torch.equal(x[row, :STATE_LEN], split.states[p].long())
+        n = hi - lo
+        assert torch.equal(
+            x[row, STATE_LEN : STATE_LEN + n], split.actions[lo:hi] + tok.action_offset
+        )
+        xr, yr, _ = split.batch(torch.arange(lo, hi), head)
+        assert torch.equal(y[row, :n], yr) and bool((y[row, n:] == -100).all())
+        assert bool((x[row, STATE_LEN + n :] == 0).all())
