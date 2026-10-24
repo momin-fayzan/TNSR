@@ -89,6 +89,9 @@ class DataConfig:
     value_bins: int = 128  # chess: win-probability bins
     mate_classes: int = 0  # chess: extra classes for "mate in n" / "mated in n" (n <= this)
     shared_board: bool = False  # chess: encode the position once and score all moves together
+    # chess: with several datasets ("a+b"), the share of each batch drawn from each, e.g. "1,1"
+    # (empty = sample uniformly over all records, so big datasets dominate)
+    dataset_weights: str = ""
 
     def validate(self) -> DataConfig:
         _check(bool(self.dataset), "data.dataset must be set")

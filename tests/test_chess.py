@@ -597,3 +597,50 @@ def test_position_batch_matches_records(chess_dataset):
         xr, yr, _ = split.batch(torch.arange(lo, hi), head)
         assert torch.equal(y[row, :n], yr) and bool((y[row, n:] == -100).all())
         assert bool((x[row, STATE_LEN + n :] == 0).all())
+
+
+def test_dataset_weights_control_batch_mix(home):
+    from tnsr_core.chess.task import ChessTask
+
+    for name, seed in (("chess-a", 1), ("chess-b", 2)):
+        items = [
+            (b.fen(), material_label(b), "val" if i % 6 == 0 else "train")
+            for i, b in enumerate(random_positions(40, seed=seed))
+        ]
+        build_dataset_from_labels(name, items, source=name, labeling="material")
+    tok = ChessTokenizer()
+    b_states = {
+        tuple(s.tolist()) for s in ChessSplit(resolve_chess_dataset("chess-b"), "train", tok).states
+    }
+
+    task = ChessTask(
+        load_config("chess-tiny", {"data.dataset": "chess-a+chess-b", "data.dataset_weights": "0,1",
+                                   "data.shared_board": True, "data.move_marks": False}),
+        log=lambda _m: None,
+    )  # fmt: skip
+    x, y = task.train_batch(64, np.random.default_rng(0))
+    assert all(tuple(row.tolist()) in b_states for row in x[:, :STATE_LEN])
+    assert task.dataset_ref()["weights"] == [0.0, 1.0]
+
+    mixed = ChessTask(
+        load_config("chess-tiny", {"data.dataset": "chess-a+chess-b", "data.dataset_weights": "1,1",
+                                   "data.shared_board": True, "data.move_marks": False}),
+        log=lambda _m: None,
+    )  # fmt: skip
+    x, y = mixed.train_batch(400, np.random.default_rng(0))
+    from_b = np.mean([tuple(row.tolist()) in b_states for row in x[:, :STATE_LEN]])
+    assert 0.4 < from_b < 0.6
+    assert bool((y[x[:, STATE_LEN:] == 0] == -100).all())  # padding stays masked
+
+    with pytest.raises(ValueError):
+        ChessTask(
+            load_config(
+                "chess-tiny", {"data.dataset": "chess-a+chess-b", "data.dataset_weights": "1"}
+            ),
+            log=lambda _m: None,
+        )
+    cfg = load_config(
+        "chess-tiny",
+        {"data.dataset": "chess-a+chess-b", "data.dataset_weights": "1,3", "train.max_steps": 3},
+    )
+    assert Trainer.create(cfg, log=lambda _m: None).train().status == "completed"

@@ -45,14 +45,23 @@ class ChessTask:
                 log(f"chess task: setting model.{key}={value}")
                 setattr(mc, key, value)
         self.value_loss = config.train.value_loss
-        self.train = ChessSplit(self.paths, "train", self.tokenizer, load_fens=False)
+        self.weights = _parse_weights(config.data.dataset_weights, len(self.paths))
+        if self.weights is None:
+            self.parts = [ChessSplit(self.paths, "train", self.tokenizer, load_fens=False)]
+        else:  # one split per dataset, so each batch can take a fixed share from each
+            self.parts = [
+                ChessSplit(p, "train", self.tokenizer, load_fens=False) for p in self.paths
+            ]
+        # Training-loss estimates use the first part (all data unless weights are set).
+        self.train = self.parts[0]
         self.val = ChessSplit(self.paths, "val", self.tokenizer)
-        self._train_positions = self._labeled_positions(self.train)
+        self._part_positions = [self._labeled_positions(p) for p in self.parts]
         # Move quality is always measured on the first dataset's validation positions, so runs
         # that add extra datasets stay comparable with runs that do not.
         self._eval_positions = list(iter_positions(self.val))[:MOVE_EVAL_POSITIONS]
+        n_train = sum(p.num_records for p in self.parts)
         log(
-            f"chess dataset {self.name}: {self.train.num_records:,} train / "
+            f"chess dataset {self.name}: {n_train:,} train / "
             f"{self.val.num_records:,} val (position, move) records"
         )
 
@@ -79,6 +88,8 @@ class ChessTask:
         }
         if len(self.metas) > 1:
             ref["sources"] = [m.get("source") for m in self.metas]
+        if self.weights is not None:
+            ref["weights"] = [round(float(w), 4) for w in self.weights]
         return ref
 
     @staticmethod
@@ -88,16 +99,29 @@ class ChessTask:
     def train_batch(
         self, batch_size: int, rng: np.random.Generator
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        counts = [batch_size] if self.weights is None else rng.multinomial(batch_size, self.weights)
+        batches = [
+            self._part_batch(part, positions, int(n), rng)
+            for part, positions, n in zip(self.parts, self._part_positions, counts, strict=True)
+            if n
+        ]
+        if len(batches) == 1:
+            return batches[0]
+        return _concat_padded(batches)
+
+    def _part_batch(
+        self, part: ChessSplit, positions: torch.Tensor, n: int, rng: np.random.Generator
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if self.shared:
-            pick = torch.from_numpy(rng.integers(0, len(self._train_positions), size=batch_size))
-            return self.train.position_batch(
-                self._train_positions[pick], self.head, soft=self.value_loss == "hl_gauss"
+            pick = torch.from_numpy(rng.integers(0, len(positions), size=n))
+            return part.position_batch(
+                positions[pick], self.head, soft=self.value_loss == "hl_gauss"
             )
-        idx = torch.from_numpy(rng.integers(0, self.train.num_records, size=batch_size))
-        x, y, _ = self.train.batch(idx, self.head)
+        idx = torch.from_numpy(rng.integers(0, part.num_records, size=n))
+        x, y, _ = part.batch(idx, self.head)
         if self.value_loss == "hl_gauss":
             # Soft targets for training; evaluation keeps hard classes so losses stay comparable.
-            return x, self.train.soft_targets(idx, self.head)
+            return x, part.soft_targets(idx, self.head)
         return x, y
 
     def eval_batches(
@@ -122,8 +146,9 @@ class ChessTask:
 
     def tokens_per_example(self) -> int:
         if self.shared:  # board + average number of labeled moves
-            moves = self.train.num_records / max(1, self.train.num_positions)
-            return int(round(STATE_LEN + moves))
+            records = sum(p.num_records for p in self.parts)
+            positions = sum(p.num_positions for p in self.parts)
+            return int(round(STATE_LEN + records / max(1, positions)))
         return SEQ_LEN
 
     @torch.no_grad()
@@ -137,6 +162,39 @@ class ChessTask:
 
     def checkpoint_meta(self) -> dict[str, Any]:
         return {"chess": self.head.to_dict()}
+
+
+def _parse_weights(text: str, n: int) -> np.ndarray | None:
+    if not text.strip():
+        return None
+    try:
+        weights = np.array([float(w) for w in text.split(",")])
+    except ValueError as exc:
+        raise ValueError(f"data.dataset_weights must be numbers like '1,2': {text!r}") from exc
+    if len(weights) != n or (weights < 0).any() or weights.sum() <= 0:
+        raise ValueError(
+            f"data.dataset_weights needs {n} non-negative weights (one per dataset), got {text!r}"
+        )
+    return weights / weights.sum()
+
+
+def _concat_padded(
+    batches: list[tuple[torch.Tensor, torch.Tensor]],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Concatenate batches whose sequences may differ in length (shared-board batches)."""
+    width = max(x.size(1) for x, _ in batches)
+    xs, ys = [], []
+    for x, y in batches:
+        pad = width - x.size(1)
+        if pad:
+            x = torch.nn.functional.pad(x, (0, pad))
+            if y.is_floating_point():
+                y = torch.nn.functional.pad(y, (0, 0, 0, pad))
+            else:
+                y = torch.nn.functional.pad(y, (0, pad), value=-100)
+        xs.append(x)
+        ys.append(y)
+    return torch.cat(xs), torch.cat(ys)
 
 
 @torch.no_grad()
