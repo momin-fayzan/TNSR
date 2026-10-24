@@ -101,6 +101,29 @@ time; TNSR does not. It uses three training-side measures and one optional play-
 - **Label quality:** 2,000 nodes per move is far shallower than DeepMind's labels. Raising
   `--nodes` improves labels linearly in cost.
 
+## Experiment log
+
+All runs: `chess-mini` (1.1M params), dev VM CPU, ~1 hour each. "top-1" and "regret" are on
+the same 400 held-out `chess-v1` validation positions (v0 used its own dataset's split).
+
+| run | data | input | records seen | top-1 = Stockfish | regret | finding |
+|---|---|---|---|---|---|---|
+| v0 | 38K Lichess positions | one sequence per move | 0.8M | 10.5% | 0.138 | baseline |
+| + marks | same | move's from/to squares marked on the board | 0.8M | 20.3% | 0.107 | marks double accuracy |
+| v1 | 71K Lichess + 15K endgames, mate classes | marks | 1.5M | 23.0% | 0.098 | still draws won games |
+| v2 | v1 + 22K on-policy positions | marks | 1.5M | 26.5% | 0.088 | converts some won games |
+| shared board | same as v2 | board once, every move a query token | 12M | 10–13.5% | – | see below |
+
+**Shared board vs marks.** `data.shared_board` encodes the position once and scores every
+legal move as a query token that attends to the board, so a step sees ~12× more labeled
+moves per second. After 7,000 steps (8× the records v2 saw) its validation loss was lower than
+v2's best (3.64 vs 3.67), yet it picked Stockfish's move only 10–13% of the time vs 26.5%.
+The loss is dominated by predicting how good the *position* is; choosing between moves needs
+the board itself to be read in the light of the move, which the marked per-move encoding
+does in every layer and a single query token cannot. The mode stays available but is not the
+default. (ChessBench files are also fully shuffled, about one move per position per file, so
+the mode would not speed up training on them anyway.)
+
 ## Scaling plan
 
 Strength in the paper grows with data and model size. The path, with the knobs that exist today:
