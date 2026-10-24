@@ -25,7 +25,19 @@
 - [x] Tests: Python unit/integration (real server), slow training tests, Vitest component and
       page tests, Playwright full-stack E2E
 
-## Planned
+## Chess (current focus)
+
+- [x] Action-value transformer without search, move marks, mate classes, endgame curriculum
+- [x] On-policy positions (`tnsr chess collect`), ChessBench import, combined datasets
+- [x] Evaluation: held-out move quality, Lichess puzzles, Stockfish matches, random mover
+- [ ] Scale: `chess-small` (6.9M) on several ChessBench files on Apple Silicon
+- [ ] Scale further on a rented GPU (25–100M+ params, billions of records) — needs owner budget
+- [ ] Iterate on-policy collection from each new model
+- [ ] Real Lichess rating via a bot account (owner decision)
+- [ ] Faster data path for ChessBench at scale (memory-mapped shards instead of loading all
+      records into RAM)
+
+## Planned (text LM, paused)
 
 - [ ] **Instruction fine-tuning**: a supervised fine-tuning stage on prompt/response pairs with
       loss masked to the response tokens (`ignore_index` is already supported by the loss).

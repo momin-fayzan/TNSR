@@ -2,6 +2,31 @@
 
 Read this to pick up the work after an interruption. Newest state first.
 
+## Current state (2026-10-24): chess engine
+
+TNSR is now a transformer chess engine without search (see `docs/chess.md`, ADR 0003). The
+text-LM milestones below remain done and tested; the product is chess.
+
+Done and verified on the dev VM:
+- Chess core: tokenizer with move marks (v2 format; v1 checkpoints still load), value head
+  with mate-distance classes, Stockfish labeling (resumable, parallel), generated endgames,
+  on-policy game collection (`tnsr chess collect`), ChessBench import
+  (`tnsr chess import-chessbench`, file 0 imported: 16.7M records), combined datasets
+  (`data.dataset = "a+b"`), shared-board mode (`data.shared_board`, kept as an option; it loses
+  to marks, see the experiment log), optional rules-aware scoring (`--rules`).
+- Engine, UCI, evaluation (held-out move quality, puzzles, Stockfish matches, random mover).
+- Play UI and chess API; Lab shows chess runs and evaluations.
+- Released models: `releases/runs/chess-v1-mini-*`, `chess-v2-mini-*` (restore with
+  `scripts/restore_release.sh`). Best: v2, 26.5% top-1, 9.6% puzzles (25.2% with `--rules`),
+  ~950 Elo on Stockfish's scale (50 games per level), beats a random mover.
+
+In progress / next:
+- Owner is training `chess-small` (6.9M) on `chess-v1+chessbench-f0` on an M-series MacBook Air.
+- Decisions pending with the owner: `--rules` on by default; GPU budget; Lichess bot account
+  for a real rating.
+- Next experiments: more ChessBench files with longer training (compute-bound on CPU); a second
+  on-policy round from v2; larger models once on Apple Silicon/GPU.
+
 ## Current state (2026-10-21)
 
 All milestones (0–8) are implemented and verified in the development environment: Linux VM,

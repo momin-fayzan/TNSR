@@ -1,0 +1,85 @@
+{
+  "kind": "evaluation",
+  "task": "chess",
+  "checkpoint_id": "experiments/chess-v2-mini-20261024-000628/checkpoints/step_0005750",
+  "checkpoint_name": "step_0005750",
+  "step": 5750,
+  "created_at": "2026-10-24T01:50:58+0000",
+  "device": "cpu",
+  "rules": false,
+  "move_quality": {
+    "move_accuracy": 0.265,
+    "regret": 0.08766821198965773,
+    "positions": 400
+  },
+  "puzzles": {
+    "accuracy": 0.096,
+    "solved": 96,
+    "total": 1000,
+    "by_rating": {
+      "0-1000": {
+        "solved": 33,
+        "total": 246,
+        "accuracy": 0.1341
+      },
+      "1000-1500": {
+        "solved": 41,
+        "total": 327,
+        "accuracy": 0.1254
+      },
+      "1500-2000": {
+        "solved": 18,
+        "total": 246,
+        "accuracy": 0.0732
+      },
+      "2000-2500": {
+        "solved": 4,
+        "total": 148,
+        "accuracy": 0.027
+      },
+      "2500-4000": {
+        "solved": 0,
+        "total": 33,
+        "accuracy": 0.0
+      }
+    },
+    "seconds": 19.5
+  },
+  "random_baseline": {
+    "games": 6,
+    "wins": 3,
+    "draws": 3,
+    "losses": 0
+  },
+  "match": {
+    "opponent": "Stockfish 16",
+    "movetime_seconds": 0.05,
+    "games": 100,
+    "levels": [
+      {
+        "stockfish_elo": 1320,
+        "wins": 0,
+        "draws": 9,
+        "losses": 41,
+        "score": 0.09
+      },
+      {
+        "stockfish_elo": 1600,
+        "wins": 0,
+        "draws": 4,
+        "losses": 46,
+        "score": 0.04
+      }
+    ],
+    "elo_estimate": 950.9,
+    "elo_note": "Performance rating against Stockfish's UCI_Elo scale (calibrated by the Stockfish team against CCRL-style ratings, not Lichess ratings). None means the result was 0% or 100%, so the rating is only bounded from one side."
+  },
+  "metrics": {
+    "puzzle_accuracy": 0.096,
+    "elo_estimate": 950.9,
+    "move_accuracy": 0.265,
+    "regret": 0.08766821198965773,
+    "positions": 400
+  },
+  "seconds": 219.9
+}
