@@ -429,7 +429,7 @@ def test_combined_datasets_train_together(home):
     assert both.num_records == (
         ChessSplit(pa, "train", tok).num_records + ChessSplit(pb, "train", tok).num_records
     )
-    assert both.num_positions == len(both.fens)
+    assert both.fens is not None and both.num_positions == len(both.fens)
 
     cfg = load_config("chess-tiny", {"data.dataset": "chess-a+chess-b", "train.max_steps": 4})
     result = Trainer.create(cfg, log=lambda _m: None).train()
@@ -504,7 +504,7 @@ def test_chessbench_bag_import(home, tmp_path):
     train, val = ChessSplit(path, "train", tok), ChessSplit(path, "val", tok)
     n_excluded = sum(1 for r in records if r[0] == boards[0].fen())
     assert train.num_records + val.num_records == len(records) - n_excluded
-    assert boards[0].fen() not in train.fens + val.fens
+    assert boards[0].fen() not in (train.fens or []) + (val.fens or [])
     assert int((train.mates != 0).sum()) == 0  # ChessBench has no mate distances
     import json
 

@@ -446,7 +446,15 @@ def resolve_chess_dataset(name_or_path: str) -> Path:
 class ChessSplit:
     """All (position, move, win probability) records of one split, held in memory."""
 
-    def __init__(self, path: Path | list[Path], split: str, tokenizer: ChessTokenizer):
+    def __init__(
+        self,
+        path: Path | list[Path],
+        split: str,
+        tokenizer: ChessTokenizer,
+        load_fens: bool = True,
+    ):
+        """``load_fens=False`` skips the FEN strings (only evaluation needs them), which is
+        most of the memory for large training sets."""
         paths = path if isinstance(path, list) else [path]
         states, state_idx, actions, probs, mates, fens = [], [], [], [], [], []
         base = 0
@@ -466,7 +474,8 @@ class ChessSplit:
                     mates.append(
                         np.where(wp >= 1.0, MATE_UNKNOWN, np.where(wp <= 0.0, -MATE_UNKNOWN, 0))
                     )
-                fens.extend(z["fens"].tolist())
+                if load_fens:
+                    fens.extend(z["fens"].tolist())
                 base += len(s)
         if not states:
             raise ChessDataError(f"No {split} shards in {', '.join(map(str, paths))}")
@@ -477,7 +486,7 @@ class ChessSplit:
         self.actions = torch.from_numpy(np.concatenate(actions).astype(np.int64))
         self.win_probs = torch.from_numpy(np.concatenate(probs).astype(np.float32))
         self.mates = torch.from_numpy(np.concatenate(mates).astype(np.int64))
-        self.fens = fens
+        self.fens: list[str] | None = fens if load_fens else None
         # Records of position i are rows pos_offsets[i] : pos_offsets[i + 1] (shards store them
         # contiguously), which lets a batch hold whole positions.
         counts = torch.bincount(self.state_idx, minlength=self.num_positions)
@@ -538,6 +547,9 @@ class ChessSplit:
 
 def iter_positions(split: ChessSplit) -> Iterator[tuple[str, list[tuple[str, float]]]]:
     """(fen, [(uci, win_prob), ...]) per position, for move-quality evaluation."""
+    fens = split.fens
+    if fens is None:
+        raise ChessDataError("This split was loaded without FENs (load_fens=False)")
     order = torch.argsort(split.state_idx, stable=True)
     sidx = split.state_idx[order]
     bounds = torch.searchsorted(sidx, torch.arange(split.num_positions + 1))
@@ -547,7 +559,7 @@ def iter_positions(split: ChessSplit) -> Iterator[tuple[str, list[tuple[str, flo
             (split.tokenizer.action_from_index(int(split.actions[r])), float(split.win_probs[r]))
             for r in rec
         ]
-        yield split.fens[i], moves
+        yield fens[i], moves
 
 
 def build_dataset_from_labels(

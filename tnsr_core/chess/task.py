@@ -45,7 +45,7 @@ class ChessTask:
                 log(f"chess task: setting model.{key}={value}")
                 setattr(mc, key, value)
         self.value_loss = config.train.value_loss
-        self.train = ChessSplit(self.paths, "train", self.tokenizer)
+        self.train = ChessSplit(self.paths, "train", self.tokenizer, load_fens=False)
         self.val = ChessSplit(self.paths, "val", self.tokenizer)
         self._train_positions = self._labeled_positions(self.train)
         # Move quality is always measured on the first dataset's validation positions, so runs

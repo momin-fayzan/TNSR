@@ -214,7 +214,9 @@ def import_chessbench_cmd(
         indices = _parse_range(files)
         excluded: set[str] = set()
         for ds in [d for d in exclude.split(",") if d]:
-            excluded |= set(ChessSplit(resolve_chess_dataset(ds), "val", ChessTokenizer()).fens)
+            excluded |= set(
+                ChessSplit(resolve_chess_dataset(ds), "val", ChessTokenizer()).fens or []
+            )
         try:  # never train on evaluation puzzles
             for row in load_puzzles():
                 board = chess.Board(row["FEN"])
