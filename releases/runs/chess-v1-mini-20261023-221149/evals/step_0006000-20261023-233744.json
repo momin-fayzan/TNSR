@@ -1,0 +1,62 @@
+{
+  "kind": "evaluation",
+  "task": "chess",
+  "checkpoint_id": "experiments/chess-v1-mini-20261023-221149/checkpoints/step_0006000",
+  "checkpoint_name": "step_0006000",
+  "step": 6000,
+  "created_at": "2026-10-23T23:18:27+0000",
+  "device": "cpu",
+  "rules": true,
+  "move_quality": {
+    "move_accuracy": 0.23,
+    "regret": 0.0976185218093451,
+    "positions": 400
+  },
+  "puzzles": {
+    "accuracy": 0.247,
+    "solved": 247,
+    "total": 1000,
+    "by_rating": {
+      "0-1000": {
+        "solved": 130,
+        "total": 246,
+        "accuracy": 0.5285
+      },
+      "1000-1500": {
+        "solved": 85,
+        "total": 327,
+        "accuracy": 0.2599
+      },
+      "1500-2000": {
+        "solved": 25,
+        "total": 246,
+        "accuracy": 0.1016
+      },
+      "2000-2500": {
+        "solved": 7,
+        "total": 148,
+        "accuracy": 0.0473
+      },
+      "2500-4000": {
+        "solved": 0,
+        "total": 33,
+        "accuracy": 0.0
+      }
+    },
+    "seconds": 685.0
+  },
+  "random_baseline": {
+    "games": 6,
+    "wins": 3,
+    "draws": 3,
+    "losses": 0
+  },
+  "match": null,
+  "metrics": {
+    "puzzle_accuracy": 0.247,
+    "move_accuracy": 0.23,
+    "regret": 0.0976185218093451,
+    "positions": 400
+  },
+  "seconds": 1157.2
+}

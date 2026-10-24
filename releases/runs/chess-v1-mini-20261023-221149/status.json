@@ -1,0 +1,18 @@
+{
+  "state": "completed",
+  "step": 6000,
+  "max_steps": 6000,
+  "progress": 1.0,
+  "elapsed_seconds": 3526.5,
+  "eta_seconds": null,
+  "tokens_seen": 119808000,
+  "best_val_loss": 3.864168977737427,
+  "last_val_loss": 3.864168977737427,
+  "last_train_loss": 3.865865707397461,
+  "peak_rss_mb": 1657.7,
+  "device": "cpu",
+  "pid": 5564,
+  "updated_at": "2026-10-23T23:10:38+0000",
+  "nonfinite_steps": 0,
+  "stop_reason": null
+}
