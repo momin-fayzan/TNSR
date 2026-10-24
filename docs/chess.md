@@ -113,6 +113,7 @@ the same 400 held-out `chess-v1` validation positions (v0 used its own dataset's
 | v1 | 71K Lichess + 15K endgames, mate classes | marks | 1.5M | 23.0% | 0.098 | still draws won games |
 | v2 | v1 + 22K on-policy positions | marks | 1.5M | 26.5% | 0.088 | converts some won games |
 | v3 | v2 + 21K more on-policy + ChessBench file 0 (16.7M records, ~85% of the mix), 20K steps | marks | 5.1M | 23.2% | 0.089 | worse than v2: 8.4% puzzles, ~880 Elo, draws the random mover again |
+| v4 | as v3 but `data.dataset_weights = 1,1,1,1` (ChessBench 25% of each batch), 20K steps | marks | 5.1M | 25.8% | 0.091 | ≈ v2 (8.9% puzzles, +2 =4 vs random, ~810 Elo) |
 | shared board | same as v2 | board once, every move a query token | 12M | 10–13.5% | – | see below |
 
 **v3: more data is not free.** Mixing one ChessBench file into the v2 data (it became ~85% of
@@ -121,6 +122,11 @@ records that taught v2 to convert were diluted ~6×, and a 1.1M-parameter model 
 from millions of extra records. Larger datasets need a larger model, and our own targeted data
 needs a guaranteed share of each batch (per-dataset sampling weights) rather than uniform
 sampling over records.
+
+**v4: the small model is saturated.** Balancing the mix recovered v2's level but did not pass
+it, even with 3.3× the training and 8× the data. Every 1.1M-parameter run since v2 lands at
+25–26% top-1 and ~9% puzzles; the next gains need a larger model (`chess-small` and up),
+which on this 4-core CPU would take days per run.
 
 **Shared board vs marks.** `data.shared_board` encodes the position once and scores every
 legal move as a query token that attends to the board, so a step sees ~12× more labeled
