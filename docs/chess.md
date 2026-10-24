@@ -71,14 +71,33 @@ Comparisons with published numbers must use the same yardstick. DeepMind reports
 Elo from games against humans and puzzle accuracy on Lichess puzzles. TNSR's puzzle numbers use
 the same puzzle source; its Elo uses a different scale.
 
+## Converting won positions
+
+A no-search engine that is far ahead faces many moves that all keep a ~100% win probability,
+so pure win-probability labels give it no reason to make progress, and it drifts into
+stalemates and repetitions. DeepMind reported the same and broke ties with Stockfish at play
+time; TNSR does not. It uses three training-side measures and one optional play-time rule:
+
+1. **Mate-distance classes** (`data.mate_classes`): besides the 128 win-probability bins, the
+   head predicts "mate in n" / "mated in n" for n up to 20, and ranking adds a small bonus for
+   faster mates (`MATE_RANK_BONUS`).
+2. **Generated endgames** (`tnsr chess prepare --endgames N`): random legal positions with
+   lopsided material (KQ vs K, KR vs K, KQ vs KR, pawn endings, ...), labeled by Stockfish.
+3. **On-policy positions** (`tnsr chess collect`): the current model plays a random mover and
+   weak Stockfish; the positions *it* reaches are labeled by Stockfish and added to the
+   training set (`data.dataset = "chess-v1+chess-onpolicy-v1"`). This is the DAgger idea:
+   train on the states your own policy visits. In practice these positions contain about five
+   times as many forced mates as positions from human games.
+4. **Rules-aware scoring** (`--rules`, off by default): a move that ends the game by rule gets
+   its exact value: checkmate = 1, stalemate / repetition or fifty-move claim / insufficient
+   material = 1/2. No opponent reply is examined and the model is never called on a later
+   position, but it does look at the position after each candidate move, so results with it
+   are always reported separately.
+
 ## Known limitations
 
-- **Mates and "won" positions:** when several moves are clearly winning, they all land in the
-  top bin, so the model has no signal for the *fastest* win and can shuffle. DeepMind reported
-  the same issue. Candidate fixes are finer bins near 0/1 or mate-distance-aware labels.
-- **Draws by repetition:** the engine has no memory of earlier positions beyond the clocks in
-  the FEN, so it cannot see repetitions coming. It is honest no-search behavior, but it costs
-  points.
+- **Draws by repetition:** the model sees only the FEN (no move history), so it cannot learn to
+  avoid repetitions; only `--rules` can.
 - **Label quality:** 2,000 nodes per move is far shallower than DeepMind's labels. Raising
   `--nodes` improves labels linearly in cost.
 
