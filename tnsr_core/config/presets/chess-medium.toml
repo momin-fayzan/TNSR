@@ -1,0 +1,32 @@
+# ~25M-parameter chess model for Apple Silicon (about 1.5 days on an M-series MacBook Air) or a
+# GPU. Trains on Lichess positions, the engine's own games and ChessBench with equal shares per
+# batch (data.dataset_weights), since uniform sampling let ChessBench drown out the rest.
+name = "chess-medium"
+description = "25M-parameter action-value chess transformer (no search)"
+task = "chess"
+
+[model]
+n_layer = 8
+n_head = 8
+n_embd = 512
+dropout = 0.0
+
+[data]
+dataset = "chess-v1+chess-onpolicy-v1+chess-onpolicy-v2+chessbench-f0"
+dataset_weights = "1,1,1,1"
+value_bins = 128
+mate_classes = 20
+
+[train]
+batch_size = 256
+max_steps = 30000
+learning_rate = 6e-4
+min_lr = 6e-5
+warmup_steps = 1000
+weight_decay = 0.01
+eval_interval = 1000
+checkpoint_interval = 500
+eval_iters = 40
+log_interval = 50
+keep_checkpoints = 3
+precision = "auto"

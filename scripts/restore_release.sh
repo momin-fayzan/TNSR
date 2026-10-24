@@ -34,7 +34,18 @@ PY
   echo "restored $run ($best)"
 done
 
+# Small released datasets (e.g. positions from TNSR's own games, labeled by Stockfish).
+for archive in "$ROOT"/releases/datasets/*.tar.gz; do
+  [[ -f "$archive" ]] || continue
+  name="$(basename "$archive" .tar.gz)"
+  dest="$HOME_DIR/datasets/$name"
+  if [[ -e "$dest" ]]; then echo "skip dataset $name (already exists)"; continue; fi
+  mkdir -p "$HOME_DIR/datasets"
+  tar -xzf "$archive" -C "$HOME_DIR/datasets"
+  echo "restored dataset $name"
+done
+
 if [[ ! -f "$HOME_DIR/datasets/chess-puzzles/puzzles.csv" ]]; then
   echo "To evaluate models, download puzzles once: uv run tnsr chess puzzles --count 5000"
 fi
-echo "Training data is not shipped; label your own with: uv run tnsr chess prepare --month 2013-01 --name chess-v1"
+echo "Lichess and ChessBench training data are not shipped; make them with: uv run tnsr chess prepare --month 2013-01 --name chess-v1 --max-positions 60000 --endgames 15000 && uv run tnsr chess import-chessbench --files 0 --name chessbench-f0"
